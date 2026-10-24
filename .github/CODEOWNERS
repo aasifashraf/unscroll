@@ -1,0 +1,9 @@
+# Every change needs review from the maintainer.
+*                       @aasifashraf
+
+# Security- and privacy-critical paths.
+/android/               @aasifashraf
+/.github/               @aasifashraf
+/tool/ci/               @aasifashraf
+/PRIVACY.md             @aasifashraf
+/LICENSE                @aasifashraf

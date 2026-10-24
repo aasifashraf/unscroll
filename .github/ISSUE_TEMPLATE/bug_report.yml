@@ -1,0 +1,46 @@
+name: 🐞 Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Please don't include personal data (your app list, usage numbers) unless needed. Security issues → use the private advisory link instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you expected vs. what you saw.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Set a 10 min limit on …\n2. …"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Unscroll version
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: Installed from
+      options: [GitHub Releases, F-Droid, Google Play, Built from source]
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device + Android version
+      placeholder: Xiaomi Redmi Note 13, Android 14 (HyperOS)
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else? (battery saver on, strict mode on, screenshots…)

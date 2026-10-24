@@ -1,0 +1,24 @@
+name: ✨ Feature request
+description: Suggest an idea
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: Describe the behavior, not another app's design. We can't copy other apps' UI or text.
+    validations:
+      required: true
+  - type: checkboxes
+    id: offline
+    attributes:
+      label: Fits Unscroll's principles
+      options:
+        - label: Works fully offline (no internet, accounts or servers)
+          required: true
