@@ -78,13 +78,9 @@ tmp/
 *.tmp
 hs_err_pid*
 
-# ───────────── Private working files (kept local, not published) ─────────────
-/todo.md
-
 # ───────────── Release artifacts (built by CI, never committed) ─────────────
 dist/
 release/
 *.sbom.json
 SHA256SUMS*
 
-todo.md
