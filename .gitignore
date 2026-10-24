@@ -1,6 +1,10 @@
 # ───────────── Secrets — NEVER commit ─────────────
 *.jks
 *.keystore
+*.jks.b64
+*.jks.base64
+*.keystore.b64
+*.keystore.base64
 *.p12
 *.pem
 *.key

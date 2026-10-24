@@ -43,6 +43,13 @@ jobs:
           flutter-version: "3.47.6"
           cache: false # no cache for release builds (reproducibility, cache poisoning)
 
+      # Tests run before any signing material touches the disk.
+      - name: Test
+        run: |
+          flutter pub get --enforce-lockfile
+          flutter analyze --fatal-infos
+          flutter test
+
       - name: Restore signing key (never committed)
         env:
           KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
@@ -51,9 +58,9 @@ jobs:
           KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           [[ -n "$KEYSTORE_BASE64" ]] || { echo "::error::Signing secrets are missing"; exit 1; }
+          umask 077
           keystore="$RUNNER_TEMP/release.jks"
           echo "$KEYSTORE_BASE64" | base64 --decode > "$keystore"
-          umask 077
           {
             echo "storeFile=$keystore"
             echo "storePassword=$KEYSTORE_PASSWORD"
@@ -61,16 +68,20 @@ jobs:
             echo "keyPassword=$KEY_PASSWORD"
           } > android/key.properties
 
-      - name: Test
-        run: |
-          flutter pub get --enforce-lockfile
-          flutter analyze --fatal-infos
-          flutter test
-
       - name: Build signed APK + AAB
         run: |
           flutter build apk --release
           flutter build appbundle --release
+
+      # Gradle falls back to debug signing when key.properties is unusable;
+      # a release must never ship like that.
+      - name: Refuse debug-signed release
+        run: |
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
+          certs="$("$apksigner" verify --print-certs build/app/outputs/flutter-apk/app-release.apk)"
+          if grep -q "CN=Android Debug" <<<"$certs"; then
+            echo "::error::Release APK is signed with the debug key"; exit 1
+          fi
 
       - name: Privacy check
         run: bash tool/ci/check_privacy.sh build/app/outputs/flutter-apk/app-release.apk
