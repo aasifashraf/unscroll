@@ -10,18 +10,20 @@ updates:
     commit-message:
       prefix: ci
 
-  - package-ecosystem: pub
-    directory: /
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: chore(deps)
-
-  - package-ecosystem: gradle
-    directory: /android
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: chore(deps)
+  # Enable once the Flutter scaffold exists (pubspec.yaml, android/):
+  # Dependabot fails when the manifest directory is missing.
+  # - package-ecosystem: pub
+  #   directory: /
+  #   schedule:
+  #     interval: weekly
+  #   open-pull-requests-limit: 5
+  #   commit-message:
+  #     prefix: chore(deps)
+  #
+  # - package-ecosystem: gradle
+  #   directory: /android
+  #   schedule:
+  #     interval: weekly
+  #   open-pull-requests-limit: 5
+  #   commit-message:
+  #     prefix: chore(deps)
