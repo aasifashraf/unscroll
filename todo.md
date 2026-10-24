@@ -1,58 +1,58 @@
-# Unscroll — TODO
+# todo
 
-Legend: `[x]` done · `[ ]` open · ⚠️ = gate (must pass before moving on)
-Update this file at the end of every task.
+My running checklist for Unscroll. Ticking things off as I go.
 
-## Phase 0 — Repository foundation
-- [x] License (GPL-3.0), NOTICE, README with disclaimer
-- [x] PRIVACY.md, SECURITY.md, CONTRIBUTING.md (DCO), CODE_OF_CONDUCT.md
-- [x] .gitignore (secrets, build output), .gitattributes (LF)
-- [x] docs/GOALS.md, docs/FEATURES.md, docs/ARCHITECTURE.md
-- [x] CI/CD workflows: ci, codeql, dependency-review, release, dependabot
-- [x] PR/issue templates, CODEOWNERS
-- [ ] **Owner (your separate git plan):** create GitHub repo `aasifashraf/unscroll`, push, then enable: branch protection on `main` (required checks + review), private vulnerability reporting, Dependabot alerts, secret scanning + push protection
-- [ ] Generate the release keystore **offline**, back it up in 2 safe places, and add it to GitHub Secrets (`RELEASE_KEYSTORE_BASE64`, `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`)
+## setup
+- [x] license (GPL-3.0), NOTICE, README + disclaimer
+- [x] privacy policy, security policy, contributing guide, code of conduct
+- [x] .gitignore / .gitattributes
+- [x] goals, feature list, architecture docs
+- [x] CI workflows (ci, codeql, dependency review, release) + dependabot
+- [x] issue/PR templates, CODEOWNERS
+- [x] create the GitHub repo and push
+- [ ] repo settings: protect `main` (required checks), private vulnerability reporting, dependabot alerts, secret scanning + push protection
+- [ ] make the release keystore offline, keep 2 backups, add it to GitHub secrets (`RELEASE_KEYSTORE_BASE64`, `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`)
 
-## Phase 1 — Design ⚠️ needs owner approval before Phase 2
-- [x] Design system + all screens: `design/unscroll-design.html`
-- [x] Design tokens: `design/tokens.json`, docs/DESIGN_SYSTEM.md
-- [ ] Owner review → revisions → **approved**
-- [ ] Original app icon + logo (our own artwork, no stock assets with unclear licenses)
+## design (finish before writing app code)
+- [x] design system + all screens in `design/unscroll-design.html`
+- [x] tokens in `design/tokens.json`, notes in `docs/DESIGN_SYSTEM.md`
+- [ ] go through the design, fix what I don't like, sign it off
+- [ ] app icon + logo (my own, no stock stuff with unclear licenses)
 
-## Phase 2 — v0.1 MVP
-- [ ] Flutter scaffold: `flutter create --org io.github.aasifashraf --project-name unscroll --platforms android .`;  minSdk 26; release signing falls back to debug keys when no keystore exists (CI checks); `analysis_options.yaml`
-- [ ] Verify CI goes green; verify a PR that adds INTERNET **fails** CI
-- [ ] Un-comment the `pub` and `gradle` entries in `.github/dependabot.yml`
-- [ ] Pigeon setup (`pigeons/engine_api.dart`) + codegen
-- [ ] Kotlin engine skeleton: Room DB, foreground service, boot receiver, day-boundary/clock helper (+ tamper tests)
-- [ ] `lib/design_system/` from tokens + debug component gallery
-- [ ] Onboarding + separate prominent disclosures (Usage, Accessibility, Overlay, Notifications) + battery-optimization guide per OEM
-- [ ] Insights: today dashboard, per-app list, week chart (UsageStatsManager)
-- [ ] App blocking: block list + block overlay
-- [ ] Daily limits per app/group + warnings at 5/1 min
-- [ ] Mindful pause overlay (breathing, configurable wait, "why?" prompt)
-- [ ] Focus session timer (blocks the chosen apps)
-- [ ] About screen: disclaimer, licenses (`showLicensePage`), privacy
-- [ ] Security & privacy review clean → tag `v0.1.0` → GitHub Release
+## v0.1
+- [ ] flutter project (`io.github.aasifashraf`, minSdk 26, release build falls back to debug signing when there's no keystore, `analysis_options.yaml`)
+- [ ] get CI green, then check that a PR adding INTERNET actually fails
+- [ ] turn the `pub` and `gradle` entries in `.github/dependabot.yml` back on
+- [ ] pigeon setup (`pigeons/engine_api.dart`)
+- [ ] kotlin engine skeleton: room db, foreground service, boot receiver, day/clock helper + tests for clock tampering
+- [ ] `lib/design_system/` from the tokens + a debug gallery screen
+- [ ] onboarding + a separate disclosure screen for each permission (usage, accessibility, overlay, notifications) + battery-optimization help per phone brand
+- [ ] insights: today, per-app list, week chart
+- [ ] app blocking: block list + block screen
+- [ ] daily limits per app/group, warnings at 5 and 1 min
+- [ ] mindful pause screen (breathing, wait time, "why are you opening this?")
+- [ ] focus timer that blocks the chosen apps
+- [ ] about screen: disclaimer, licenses, privacy
+- [ ] security/privacy review → tag `v0.1.0` → GitHub release
 
-## Phase 3 — v0.2
-- [ ] Schedules (work/study/bedtime/custom, per weekday)
-- [ ] Short-form blocking (Reels/Shorts/Spotlight/etc.) with per-app view-ID maps + a fallback heuristic
-- [ ] Website blocking: Accessibility URL-bar check in supported browsers + keyword blocking
-- [ ] Growing plant focus visuals, session history
-- [ ] Streaks, achievements, daily goal
-- [ ] Open-count limits, rising wait times, auto-close after N minutes
+## v0.2
+- [ ] schedules (work / study / bedtime / custom, per weekday)
+- [ ] block reels/shorts/spotlight but keep the rest of the app usable (per-app view-id maps + fallback)
+- [ ] website + keyword blocking through the browser address bar
+- [ ] growing plant for focus sessions, session history
+- [ ] streaks, achievements, daily goal
+- [ ] open limits, longer waits each open, auto-close after N minutes
 
-## Phase 4 — v0.3
-- [ ] Strict mode: Device Admin uninstall protection, settings lock, cool-down before loosening rules
-- [ ] Emergency unlock (long delay or typed challenge) — must always work
-- [ ] Encrypted local backup export/import; CSV export
-- [ ] Home widget, quick-settings tile, quick-start presets
-- [ ] Localization (en + hi first), TalkBack pass
-- [ ] F-Droid metadata (`fastlane/metadata/android/`) → submit to F-Droid
+## v0.3
+- [ ] strict mode: uninstall protection, lock settings, delay before rules can be loosened
+- [ ] emergency unlock (long wait or typing challenge). This one has to always work
+- [ ] encrypted backup export/import, CSV export
+- [ ] home widget, quick settings tile, presets
+- [ ] english + hindi, TalkBack pass
+- [ ] F-Droid metadata (`fastlane/metadata/android/`) and submit
 
-## Phase 5 — v1.0 ⚠️ legal gate
-- [ ] ⚠️ Trademark search for "Unscroll" (USPTO, WIPO Global Brand DB, Indian IP office). Rename if there's a conflict.
-- [ ] ⚠️ Lawyer review of the license, privacy policy, disclaimer and store listing
-- [ ] Play Console: Accessibility declaration, data-safety form ("no data collected"), privacy policy URL, 13+ rating
-- [ ] Play Store release (AAB)
+## before v1.0
+- [ ] trademark search for "Unscroll" (USPTO, WIPO, Indian IP office), rename if it clashes
+- [ ] get a lawyer to look at the license, privacy policy, disclaimer and store listing
+- [ ] Play Console: accessibility declaration, data safety ("no data collected"), privacy policy link, 13+ rating
+- [ ] Play Store release
