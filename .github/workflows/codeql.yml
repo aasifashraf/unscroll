@@ -1,0 +1,75 @@
+name: CodeQL
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+          - language: java-kotlin
+            build-mode: manual
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Skip Kotlin until the app exists
+        id: gate
+        env:
+          LANGUAGE: ${{ matrix.language }}
+        run: |
+          if [[ "$LANGUAGE" == "java-kotlin" && ! -f pubspec.yaml ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        if: steps.gate.outputs.skip == 'false'
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        if: matrix.build-mode == 'manual' && steps.gate.outputs.skip == 'false'
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        if: matrix.build-mode == 'manual' && steps.gate.outputs.skip == 'false'
+        with:
+          channel: stable
+          flutter-version: "3.47.6"
+          cache: true
+
+      - name: Build (Kotlin sources)
+        if: matrix.build-mode == 'manual' && steps.gate.outputs.skip == 'false'
+        run: |
+          flutter pub get --enforce-lockfile
+          flutter build apk --debug
+
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        if: steps.gate.outputs.skip == 'false'
+        with:
+          category: /language:${{ matrix.language }}
