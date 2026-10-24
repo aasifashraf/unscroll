@@ -16,13 +16,13 @@ My running checklist for Unscroll. Ticking things off as I go.
 ## design (finish before writing app code)
 - [x] design system + all screens in `design/unscroll-design.html`
 - [x] tokens in `design/tokens.json`, notes in `docs/DESIGN_SYSTEM.md`
-- [ ] go through the design, fix what I don't like, sign it off
+- [x] go through the design, fix what I don't like, sign it off
 - [ ] app icon + logo (my own, no stock stuff with unclear licenses)
 
 ## v0.1
-- [ ] flutter project (`io.github.aasifashraf`, minSdk 26, release build falls back to debug signing when there's no keystore, `analysis_options.yaml`)
+- [x] flutter project (`io.github.aasifashraf`, minSdk 26, release build falls back to debug signing when there's no keystore, `analysis_options.yaml`)
 - [ ] get CI green, then check that a PR adding INTERNET actually fails
-- [ ] turn the `pub` and `gradle` entries in `.github/dependabot.yml` back on
+- [x] turn the `pub` and `gradle` entries in `.github/dependabot.yml` back on
 - [ ] pigeon setup (`pigeons/engine_api.dart`)
 - [ ] kotlin engine skeleton: room db, foreground service, boot receiver, day/clock helper + tests for clock tampering
 - [ ] `lib/design_system/` from the tokens + a debug gallery screen
