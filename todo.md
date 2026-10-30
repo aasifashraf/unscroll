@@ -23,7 +23,7 @@ My running checklist for Unscroll. Ticking things off as I go.
 - [x] flutter project (`io.github.aasifashraf`, minSdk 26, release build falls back to debug signing when there's no keystore, `analysis_options.yaml`)
 - [ ] get CI green, then check that a PR adding INTERNET actually fails
 - [x] turn the `pub` and `gradle` entries in `.github/dependabot.yml` back on
-- [ ] pigeon setup (`pigeons/engine_api.dart`)
+- [x] pigeon setup (`pigeons/engine_api.dart`)
 - [ ] kotlin engine skeleton: room db, foreground service, boot receiver, day/clock helper + tests for clock tampering
 - [ ] `lib/design_system/` from the tokens + a debug gallery screen
 - [ ] onboarding + a separate disclosure screen for each permission (usage, accessibility, overlay, notifications) + battery-optimization help per phone brand
