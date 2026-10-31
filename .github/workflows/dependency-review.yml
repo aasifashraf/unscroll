@@ -23,3 +23,5 @@ jobs:
             MPL-2.0, LGPL-2.1-only, LGPL-2.1-or-later, LGPL-3.0-only,
             LGPL-3.0-or-later, GPL-3.0-only, GPL-3.0-or-later, OFL-1.1,
             Unlicense, CC0-1.0, BSL-1.0, 0BSD
+          # Test-only, never shipped in the app.
+          allow-dependencies-licenses: pkg:maven/junit/junit, pkg:maven/org.json/json

@@ -64,3 +64,11 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // Test-only (never shipped in the APK). JUnit is EPL-1.0; allowed for tests by
+    // `allow-dependencies-licenses` in .github/workflows/dependency-review.yml.
+    testImplementation("junit:junit:4.13.2")
+    // Real org.json for JVM tests (Android provides it at runtime). Public domain.
+    testImplementation("org.json:json:20260814")
+}
