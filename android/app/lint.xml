@@ -2,6 +2,8 @@
 <lint>
     <!-- local.properties is generated per machine by Flutter (Windows paths
          are unescaped) and is never committed. -->
+    <!-- We don't depend on androidx core-ktx; the platform calls are fine. -->
+    <issue id="UseKtx" severity="ignore" />
     <issue id="PropertyEscape">
         <ignore path="**/local.properties" />
     </issue>

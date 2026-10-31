@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Original glyph: an open circle with a dot (status-bar icon). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M12,3A9,9 0,1 0,21 12h-2.2A6.8,6.8 0,1 1,12 5.2V3z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M18,6m-2.2,0a2.2,2.2 0,1 1,4.4 0a2.2,2.2 0,1 1,-4.4 0" />
+</vector>
