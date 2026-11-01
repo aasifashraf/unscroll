@@ -21,6 +21,7 @@ void main() {
       overlay: true,
       notifications: false,
       batteryUnrestricted: true,
+      accessibilityRunning: false,
     );
     messenger.setMockMessageHandler(channel, (_) async {
       return EngineHostApi.pigeonChannelCodec.encodeMessage(<Object?>[
@@ -35,6 +36,7 @@ void main() {
     expect(status.overlay, isTrue);
     expect(status.notifications, isFalse);
     expect(status.batteryUnrestricted, isTrue);
+    expect(status.accessibilityRunning, isFalse);
   });
 
   test('a missing host implementation surfaces as an error', () async {

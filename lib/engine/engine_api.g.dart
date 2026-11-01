@@ -97,6 +97,16 @@ int _deepHash(Object? value) {
 }
 
 
+/// A system settings screen the user is sent to after an in-app disclosure.
+enum SettingsPage {
+  usageAccess,
+  accessibility,
+  overlay,
+  notifications,
+  battery,
+  appDetails;
+}
+
 /// Which special-access permissions Unscroll currently holds.
 class PermissionStatus {
   PermissionStatus({
@@ -105,6 +115,7 @@ class PermissionStatus {
     required this.overlay,
     required this.notifications,
     required this.batteryUnrestricted,
+    required this.accessibilityRunning,
   });
 
   /// Usage access (screen time and limits).
@@ -113,7 +124,7 @@ class PermissionStatus {
   /// Unscroll's accessibility service is enabled (app, feed and site blocking).
   bool accessibility;
 
-  /// Display over other apps (pause and block screens).
+  /// Display over other apps (pause and block screens without accessibility).
   bool overlay;
 
   /// Notifications are allowed (limit warnings, foreground service).
@@ -122,6 +133,10 @@ class PermissionStatus {
   /// Battery optimization is off, so the system won't stop blocking.
   bool batteryUnrestricted;
 
+  /// The accessibility service is actually connected right now (it can be switched on in
+  /// settings but stopped, e.g. after a crash or by Android's restricted settings).
+  bool accessibilityRunning;
+
   List<Object?> _toList() {
     return <Object?>[
       usageAccess,
@@ -129,6 +144,7 @@ class PermissionStatus {
       overlay,
       notifications,
       batteryUnrestricted,
+      accessibilityRunning,
     ];
   }
 
@@ -143,6 +159,7 @@ class PermissionStatus {
       overlay: result[2]! as bool,
       notifications: result[3]! as bool,
       batteryUnrestricted: result[4]! as bool,
+      accessibilityRunning: result[5]! as bool,
     );
   }
 
@@ -155,7 +172,7 @@ class PermissionStatus {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(usageAccess, other.usageAccess) && _deepEquals(accessibility, other.accessibility) && _deepEquals(overlay, other.overlay) && _deepEquals(notifications, other.notifications) && _deepEquals(batteryUnrestricted, other.batteryUnrestricted);
+    return _deepEquals(usageAccess, other.usageAccess) && _deepEquals(accessibility, other.accessibility) && _deepEquals(overlay, other.overlay) && _deepEquals(notifications, other.notifications) && _deepEquals(batteryUnrestricted, other.batteryUnrestricted) && _deepEquals(accessibilityRunning, other.accessibilityRunning);
   }
 
   @override
@@ -164,7 +181,595 @@ class PermissionStatus {
 
   @override
   String toString() {
-    return 'PermissionStatus(usageAccess: $usageAccess, accessibility: $accessibility, overlay: $overlay, notifications: $notifications, batteryUnrestricted: $batteryUnrestricted)';
+    return 'PermissionStatus(usageAccess: $usageAccess, accessibility: $accessibility, overlay: $overlay, notifications: $notifications, batteryUnrestricted: $batteryUnrestricted, accessibilityRunning: $accessibilityRunning)';
+  }
+}
+
+/// Today's state of one app's daily limit, computed by the engine (the UI never re-derives it).
+class LimitStatus {
+  LimitStatus({
+    required this.packageName,
+    required this.usedMillis,
+    required this.allowedMillis,
+  });
+
+  String packageName;
+
+  int usedMillis;
+
+  /// Limit plus any "5 more minutes" taken today.
+  int allowedMillis;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      packageName,
+      usedMillis,
+      allowedMillis,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static LimitStatus decode(Object result) {
+    result as List<Object?>;
+    return LimitStatus(
+      packageName: result[0]! as String,
+      usedMillis: result[1]! as int,
+      allowedMillis: result[2]! as int,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! LimitStatus || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(packageName, other.packageName) && _deepEquals(usedMillis, other.usedMillis) && _deepEquals(allowedMillis, other.allowedMillis);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'LimitStatus(packageName: $packageName, usedMillis: $usedMillis, allowedMillis: $allowedMillis)';
+  }
+}
+
+class InstalledApp {
+  InstalledApp({
+    required this.packageName,
+    required this.label,
+    this.icon,
+  });
+
+  String packageName;
+
+  String label;
+
+  /// PNG, 96×96 px; null if the app has no icon.
+  Uint8List? icon;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      packageName,
+      label,
+      icon,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static InstalledApp decode(Object result) {
+    result as List<Object?>;
+    return InstalledApp(
+      packageName: result[0]! as String,
+      label: result[1]! as String,
+      icon: result[2] as Uint8List?,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! InstalledApp || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(packageName, other.packageName) && _deepEquals(label, other.label) && _deepEquals(icon, other.icon);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'InstalledApp(packageName: $packageName, label: $label, icon: $icon)';
+  }
+}
+
+class AppUsageInfo {
+  AppUsageInfo({
+    required this.packageName,
+    required this.millis,
+    required this.opens,
+  });
+
+  String packageName;
+
+  int millis;
+
+  int opens;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      packageName,
+      millis,
+      opens,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static AppUsageInfo decode(Object result) {
+    result as List<Object?>;
+    return AppUsageInfo(
+      packageName: result[0]! as String,
+      millis: result[1]! as int,
+      opens: result[2]! as int,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! AppUsageInfo || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(packageName, other.packageName) && _deepEquals(millis, other.millis) && _deepEquals(opens, other.opens);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'AppUsageInfo(packageName: $packageName, millis: $millis, opens: $opens)';
+  }
+}
+
+class DayUsage {
+  DayUsage({
+    required this.dayStartMillis,
+    required this.totalMillis,
+    required this.unlocks,
+    required this.apps,
+    required this.limits,
+  });
+
+  int dayStartMillis;
+
+  int totalMillis;
+
+  int unlocks;
+
+  /// Sorted by time, most used first.
+  List<AppUsageInfo> apps;
+
+  /// Only filled for today: limits that apply today.
+  List<LimitStatus> limits;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      dayStartMillis,
+      totalMillis,
+      unlocks,
+      apps,
+      limits,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static DayUsage decode(Object result) {
+    result as List<Object?>;
+    return DayUsage(
+      dayStartMillis: result[0]! as int,
+      totalMillis: result[1]! as int,
+      unlocks: result[2]! as int,
+      apps: (result[3]! as List<Object?>).cast<AppUsageInfo>(),
+      limits: (result[4]! as List<Object?>).cast<LimitStatus>(),
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! DayUsage || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(dayStartMillis, other.dayStartMillis) && _deepEquals(totalMillis, other.totalMillis) && _deepEquals(unlocks, other.unlocks) && _deepEquals(apps, other.apps) && _deepEquals(limits, other.limits);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'DayUsage(dayStartMillis: $dayStartMillis, totalMillis: $totalMillis, unlocks: $unlocks, apps: $apps, limits: $limits)';
+  }
+}
+
+class AppRuleMsg {
+  AppRuleMsg({
+    required this.packageName,
+    required this.blocked,
+    this.dailyLimitMinutes,
+    required this.limitDays,
+    this.pauseSeconds,
+    this.openLimit,
+  });
+
+  String packageName;
+
+  bool blocked;
+
+  int? dailyLimitMinutes;
+
+  /// ISO weekdays 1 (Mon) … 7 (Sun) the limit applies on.
+  List<int> limitDays;
+
+  int? pauseSeconds;
+
+  int? openLimit;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      packageName,
+      blocked,
+      dailyLimitMinutes,
+      limitDays,
+      pauseSeconds,
+      openLimit,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static AppRuleMsg decode(Object result) {
+    result as List<Object?>;
+    return AppRuleMsg(
+      packageName: result[0]! as String,
+      blocked: result[1]! as bool,
+      dailyLimitMinutes: result[2] as int?,
+      limitDays: (result[3]! as List<Object?>).cast<int>(),
+      pauseSeconds: result[4] as int?,
+      openLimit: result[5] as int?,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! AppRuleMsg || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(packageName, other.packageName) && _deepEquals(blocked, other.blocked) && _deepEquals(dailyLimitMinutes, other.dailyLimitMinutes) && _deepEquals(limitDays, other.limitDays) && _deepEquals(pauseSeconds, other.pauseSeconds) && _deepEquals(openLimit, other.openLimit);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'AppRuleMsg(packageName: $packageName, blocked: $blocked, dailyLimitMinutes: $dailyLimitMinutes, limitDays: $limitDays, pauseSeconds: $pauseSeconds, openLimit: $openLimit)';
+  }
+}
+
+class ScheduleMsg {
+  ScheduleMsg({
+    required this.id,
+    required this.name,
+    required this.enabled,
+    required this.days,
+    required this.startMinute,
+    required this.endMinute,
+    required this.packages,
+  });
+
+  String id;
+
+  String name;
+
+  bool enabled;
+
+  List<int> days;
+
+  int startMinute;
+
+  int endMinute;
+
+  List<String> packages;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      id,
+      name,
+      enabled,
+      days,
+      startMinute,
+      endMinute,
+      packages,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static ScheduleMsg decode(Object result) {
+    result as List<Object?>;
+    return ScheduleMsg(
+      id: result[0]! as String,
+      name: result[1]! as String,
+      enabled: result[2]! as bool,
+      days: (result[3]! as List<Object?>).cast<int>(),
+      startMinute: result[4]! as int,
+      endMinute: result[5]! as int,
+      packages: (result[6]! as List<Object?>).cast<String>(),
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! ScheduleMsg || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(id, other.id) && _deepEquals(name, other.name) && _deepEquals(enabled, other.enabled) && _deepEquals(days, other.days) && _deepEquals(startMinute, other.startMinute) && _deepEquals(endMinute, other.endMinute) && _deepEquals(packages, other.packages);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'ScheduleMsg(id: $id, name: $name, enabled: $enabled, days: $days, startMinute: $startMinute, endMinute: $endMinute, packages: $packages)';
+  }
+}
+
+class FocusMsg {
+  FocusMsg({
+    required this.startedAt,
+    required this.endsAt,
+    required this.packages,
+  });
+
+  int startedAt;
+
+  int endsAt;
+
+  List<String> packages;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      startedAt,
+      endsAt,
+      packages,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static FocusMsg decode(Object result) {
+    result as List<Object?>;
+    return FocusMsg(
+      startedAt: result[0]! as int,
+      endsAt: result[1]! as int,
+      packages: (result[2]! as List<Object?>).cast<String>(),
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! FocusMsg || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(startedAt, other.startedAt) && _deepEquals(endsAt, other.endsAt) && _deepEquals(packages, other.packages);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'FocusMsg(startedAt: $startedAt, endsAt: $endsAt, packages: $packages)';
+  }
+}
+
+class FocusRecordMsg {
+  FocusRecordMsg({
+    required this.startedAt,
+    required this.endedAt,
+    required this.completed,
+  });
+
+  int startedAt;
+
+  int endedAt;
+
+  bool completed;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      startedAt,
+      endedAt,
+      completed,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static FocusRecordMsg decode(Object result) {
+    result as List<Object?>;
+    return FocusRecordMsg(
+      startedAt: result[0]! as int,
+      endedAt: result[1]! as int,
+      completed: result[2]! as bool,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! FocusRecordMsg || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(startedAt, other.startedAt) && _deepEquals(endedAt, other.endedAt) && _deepEquals(completed, other.completed);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'FocusRecordMsg(startedAt: $startedAt, endedAt: $endedAt, completed: $completed)';
+  }
+}
+
+/// Everything the UI shows that the engine owns.
+class EngineSnapshot {
+  EngineSnapshot({
+    required this.rules,
+    required this.schedules,
+    this.focus,
+    this.quickBlockUntil,
+    required this.blockedSites,
+    required this.blockedKeywords,
+    required this.onboardingDone,
+    required this.dailyGoalMinutes,
+    required this.dayStartMillis,
+    required this.focusHistory,
+    required this.engineNowMillis,
+  });
+
+  List<AppRuleMsg> rules;
+
+  List<ScheduleMsg> schedules;
+
+  FocusMsg? focus;
+
+  int? quickBlockUntil;
+
+  List<String> blockedSites;
+
+  List<String> blockedKeywords;
+
+  bool onboardingDone;
+
+  int dailyGoalMinutes;
+
+  int dayStartMillis;
+
+  List<FocusRecordMsg> focusHistory;
+
+  /// The engine's tamper-resistant "now"; focus and quick-block times are in this frame.
+  int engineNowMillis;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      rules,
+      schedules,
+      focus,
+      quickBlockUntil,
+      blockedSites,
+      blockedKeywords,
+      onboardingDone,
+      dailyGoalMinutes,
+      dayStartMillis,
+      focusHistory,
+      engineNowMillis,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static EngineSnapshot decode(Object result) {
+    result as List<Object?>;
+    return EngineSnapshot(
+      rules: (result[0]! as List<Object?>).cast<AppRuleMsg>(),
+      schedules: (result[1]! as List<Object?>).cast<ScheduleMsg>(),
+      focus: result[2] as FocusMsg?,
+      quickBlockUntil: result[3] as int?,
+      blockedSites: (result[4]! as List<Object?>).cast<String>(),
+      blockedKeywords: (result[5]! as List<Object?>).cast<String>(),
+      onboardingDone: result[6]! as bool,
+      dailyGoalMinutes: result[7]! as int,
+      dayStartMillis: result[8]! as int,
+      focusHistory: (result[9]! as List<Object?>).cast<FocusRecordMsg>(),
+      engineNowMillis: result[10]! as int,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! EngineSnapshot || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(rules, other.rules) && _deepEquals(schedules, other.schedules) && _deepEquals(focus, other.focus) && _deepEquals(quickBlockUntil, other.quickBlockUntil) && _deepEquals(blockedSites, other.blockedSites) && _deepEquals(blockedKeywords, other.blockedKeywords) && _deepEquals(onboardingDone, other.onboardingDone) && _deepEquals(dailyGoalMinutes, other.dailyGoalMinutes) && _deepEquals(dayStartMillis, other.dayStartMillis) && _deepEquals(focusHistory, other.focusHistory) && _deepEquals(engineNowMillis, other.engineNowMillis);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'EngineSnapshot(rules: $rules, schedules: $schedules, focus: $focus, quickBlockUntil: $quickBlockUntil, blockedSites: $blockedSites, blockedKeywords: $blockedKeywords, onboardingDone: $onboardingDone, dailyGoalMinutes: $dailyGoalMinutes, dayStartMillis: $dayStartMillis, focusHistory: $focusHistory, engineNowMillis: $engineNowMillis)';
   }
 }
 
@@ -176,8 +781,38 @@ class _PigeonCodec extends StandardMessageCodec {
     if (value is int) {
       buffer.putUint8(4);
       buffer.putInt64(value);
-    }    else if (value is PermissionStatus) {
+    }    else if (value is SettingsPage) {
       buffer.putUint8(129);
+      writeValue(buffer, value.index);
+    }    else if (value is PermissionStatus) {
+      buffer.putUint8(130);
+      writeValue(buffer, value.encode());
+    }    else if (value is LimitStatus) {
+      buffer.putUint8(131);
+      writeValue(buffer, value.encode());
+    }    else if (value is InstalledApp) {
+      buffer.putUint8(132);
+      writeValue(buffer, value.encode());
+    }    else if (value is AppUsageInfo) {
+      buffer.putUint8(133);
+      writeValue(buffer, value.encode());
+    }    else if (value is DayUsage) {
+      buffer.putUint8(134);
+      writeValue(buffer, value.encode());
+    }    else if (value is AppRuleMsg) {
+      buffer.putUint8(135);
+      writeValue(buffer, value.encode());
+    }    else if (value is ScheduleMsg) {
+      buffer.putUint8(136);
+      writeValue(buffer, value.encode());
+    }    else if (value is FocusMsg) {
+      buffer.putUint8(137);
+      writeValue(buffer, value.encode());
+    }    else if (value is FocusRecordMsg) {
+      buffer.putUint8(138);
+      writeValue(buffer, value.encode());
+    }    else if (value is EngineSnapshot) {
+      buffer.putUint8(139);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -188,7 +823,28 @@ class _PigeonCodec extends StandardMessageCodec {
   Object? readValueOfType(int type, ReadBuffer buffer) {
     switch (type) {
       case 129:
+        final value = readValue(buffer) as int?;
+        return value == null ? null : SettingsPage.values[value];
+      case 130:
         return PermissionStatus.decode(readValue(buffer)!);
+      case 131:
+        return LimitStatus.decode(readValue(buffer)!);
+      case 132:
+        return InstalledApp.decode(readValue(buffer)!);
+      case 133:
+        return AppUsageInfo.decode(readValue(buffer)!);
+      case 134:
+        return DayUsage.decode(readValue(buffer)!);
+      case 135:
+        return AppRuleMsg.decode(readValue(buffer)!);
+      case 136:
+        return ScheduleMsg.decode(readValue(buffer)!);
+      case 137:
+        return FocusMsg.decode(readValue(buffer)!);
+      case 138:
+        return FocusRecordMsg.decode(readValue(buffer)!);
+      case 139:
+        return EngineSnapshot.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
     }
@@ -230,5 +886,321 @@ class EngineHostApi {
     )
     ;
     return pigeonVar_replyValue! as PermissionStatus;
+  }
+
+  /// Opens the matching Android settings screen.
+  Future<void> openSettings(SettingsPage page) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.unscroll.EngineHostApi.openSettings$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[page]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  /// Apps with a launcher icon that can be limited, sorted by name (excludes Unscroll and
+  /// apps that are never blocked, like Phone and Messages).
+  /// Runs off the main thread (icon loading is slow).
+  Future<List<InstalledApp>> getInstalledApps() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.unscroll.EngineHostApi.getInstalledApps$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return (pigeonVar_replyValue! as List<Object?>).cast<InstalledApp>();
+  }
+
+  /// The last [days] days of usage, oldest first; the last entry is today.
+  Future<List<DayUsage>> getUsage(int days) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.unscroll.EngineHostApi.getUsage$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[days]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return (pigeonVar_replyValue! as List<Object?>).cast<DayUsage>();
+  }
+
+  Future<EngineSnapshot> getSnapshot() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.unscroll.EngineHostApi.getSnapshot$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return pigeonVar_replyValue! as EngineSnapshot;
+  }
+
+  Future<void> setRule(AppRuleMsg rule) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.unscroll.EngineHostApi.setRule$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[rule]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  Future<void> removeRule(String packageName) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.unscroll.EngineHostApi.removeRule$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[packageName]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  Future<void> setSchedule(ScheduleMsg schedule) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.unscroll.EngineHostApi.setSchedule$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[schedule]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  Future<void> removeSchedule(String id) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.unscroll.EngineHostApi.removeSchedule$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[id]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  /// Returns false when [site] is not a valid web address.
+  Future<bool> addBlockedSite(String site) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.unscroll.EngineHostApi.addBlockedSite$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[site]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return pigeonVar_replyValue! as bool;
+  }
+
+  Future<void> removeBlockedSite(String site) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.unscroll.EngineHostApi.removeBlockedSite$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[site]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  Future<void> setBlockedKeywords(List<String> keywords) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.unscroll.EngineHostApi.setBlockedKeywords$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[keywords]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  Future<void> startFocus(int minutes, List<String> packages) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.unscroll.EngineHostApi.startFocus$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[minutes, packages]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  Future<void> stopFocus() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.unscroll.EngineHostApi.stopFocus$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  Future<void> startQuickBlock(int minutes) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.unscroll.EngineHostApi.startQuickBlock$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[minutes]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  Future<void> stopQuickBlock() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.unscroll.EngineHostApi.stopQuickBlock$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  Future<void> setOnboardingDone(bool done) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.unscroll.EngineHostApi.setOnboardingDone$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[done]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  Future<void> setDailyGoal(int minutes) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.unscroll.EngineHostApi.setDailyGoal$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[minutes]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
   }
 }

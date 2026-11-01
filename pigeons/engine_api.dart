@@ -21,6 +21,7 @@ class PermissionStatus {
     required this.overlay,
     required this.notifications,
     required this.batteryUnrestricted,
+    required this.accessibilityRunning,
   });
 
   /// Usage access (screen time and limits).
@@ -29,7 +30,7 @@ class PermissionStatus {
   /// Unscroll's accessibility service is enabled (app, feed and site blocking).
   bool accessibility;
 
-  /// Display over other apps (pause and block screens).
+  /// Display over other apps (pause and block screens without accessibility).
   bool overlay;
 
   /// Notifications are allowed (limit warnings, foreground service).
@@ -37,10 +38,209 @@ class PermissionStatus {
 
   /// Battery optimization is off, so the system won't stop blocking.
   bool batteryUnrestricted;
+
+  /// The accessibility service is actually connected right now (it can be switched on in
+  /// settings but stopped, e.g. after a crash or by Android's restricted settings).
+  bool accessibilityRunning;
+}
+
+/// Today's state of one app's daily limit, computed by the engine (the UI never re-derives it).
+class LimitStatus {
+  LimitStatus({
+    required this.packageName,
+    required this.usedMillis,
+    required this.allowedMillis,
+  });
+  String packageName;
+  int usedMillis;
+
+  /// Limit plus any "5 more minutes" taken today.
+  int allowedMillis;
+}
+
+/// A system settings screen the user is sent to after an in-app disclosure.
+enum SettingsPage {
+  usageAccess,
+  accessibility,
+  overlay,
+  notifications,
+  battery,
+  appDetails,
+}
+
+class InstalledApp {
+  InstalledApp({required this.packageName, required this.label, this.icon});
+  String packageName;
+  String label;
+
+  /// PNG, 96×96 px; null if the app has no icon.
+  Uint8List? icon;
+}
+
+class AppUsageInfo {
+  AppUsageInfo({
+    required this.packageName,
+    required this.millis,
+    required this.opens,
+  });
+  String packageName;
+  int millis;
+  int opens;
+}
+
+class DayUsage {
+  DayUsage({
+    required this.dayStartMillis,
+    required this.totalMillis,
+    required this.unlocks,
+    required this.apps,
+    required this.limits,
+  });
+  int dayStartMillis;
+  int totalMillis;
+  int unlocks;
+
+  /// Sorted by time, most used first.
+  List<AppUsageInfo> apps;
+
+  /// Only filled for today: limits that apply today.
+  List<LimitStatus> limits;
+}
+
+class AppRuleMsg {
+  AppRuleMsg({
+    required this.packageName,
+    required this.blocked,
+    this.dailyLimitMinutes,
+    required this.limitDays,
+    this.pauseSeconds,
+    this.openLimit,
+  });
+  String packageName;
+  bool blocked;
+  int? dailyLimitMinutes;
+
+  /// ISO weekdays 1 (Mon) … 7 (Sun) the limit applies on.
+  List<int> limitDays;
+  int? pauseSeconds;
+  int? openLimit;
+}
+
+class ScheduleMsg {
+  ScheduleMsg({
+    required this.id,
+    required this.name,
+    required this.enabled,
+    required this.days,
+    required this.startMinute,
+    required this.endMinute,
+    required this.packages,
+  });
+  String id;
+  String name;
+  bool enabled;
+  List<int> days;
+  int startMinute;
+  int endMinute;
+  List<String> packages;
+}
+
+class FocusMsg {
+  FocusMsg({
+    required this.startedAt,
+    required this.endsAt,
+    required this.packages,
+  });
+  int startedAt;
+  int endsAt;
+  List<String> packages;
+}
+
+class FocusRecordMsg {
+  FocusRecordMsg({
+    required this.startedAt,
+    required this.endedAt,
+    required this.completed,
+  });
+  int startedAt;
+  int endedAt;
+  bool completed;
+}
+
+/// Everything the UI shows that the engine owns.
+class EngineSnapshot {
+  EngineSnapshot({
+    required this.rules,
+    required this.schedules,
+    this.focus,
+    this.quickBlockUntil,
+    required this.blockedSites,
+    required this.blockedKeywords,
+    required this.onboardingDone,
+    required this.dailyGoalMinutes,
+    required this.dayStartMillis,
+    required this.focusHistory,
+    required this.engineNowMillis,
+  });
+  List<AppRuleMsg> rules;
+  List<ScheduleMsg> schedules;
+  FocusMsg? focus;
+  int? quickBlockUntil;
+  List<String> blockedSites;
+  List<String> blockedKeywords;
+  bool onboardingDone;
+  int dailyGoalMinutes;
+  int dayStartMillis;
+  List<FocusRecordMsg> focusHistory;
+
+  /// The engine's tamper-resistant "now"; focus and quick-block times are in this frame.
+  int engineNowMillis;
 }
 
 @HostApi()
 abstract class EngineHostApi {
   /// Read-only check of every permission the engine depends on.
   PermissionStatus getPermissionStatus();
+
+  /// Opens the matching Android settings screen.
+  void openSettings(SettingsPage page);
+
+  /// Apps with a launcher icon that can be limited, sorted by name (excludes Unscroll and
+  /// apps that are never blocked, like Phone and Messages).
+  /// Runs off the main thread (icon loading is slow).
+  @TaskQueue(type: TaskQueueType.serialBackgroundThread)
+  List<InstalledApp> getInstalledApps();
+
+  /// The last [days] days of usage, oldest first; the last entry is today.
+  @TaskQueue(type: TaskQueueType.serialBackgroundThread)
+  List<DayUsage> getUsage(int days);
+
+  EngineSnapshot getSnapshot();
+
+  void setRule(AppRuleMsg rule);
+
+  void removeRule(String packageName);
+
+  void setSchedule(ScheduleMsg schedule);
+
+  void removeSchedule(String id);
+
+  /// Returns false when [site] is not a valid web address.
+  bool addBlockedSite(String site);
+
+  void removeBlockedSite(String site);
+
+  void setBlockedKeywords(List<String> keywords);
+
+  void startFocus(int minutes, List<String> packages);
+
+  void stopFocus();
+
+  void startQuickBlock(int minutes);
+
+  void stopQuickBlock();
+
+  void setOnboardingDone(bool done);
+
+  void setDailyGoal(int minutes);
 }
