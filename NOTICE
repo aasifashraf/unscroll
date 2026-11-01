@@ -21,14 +21,20 @@ Every third-party component bundled in this app must be listed here with its
 license. Only GPL-3.0-compatible licenses are allowed (see CONTRIBUTING.md).
 
 Fonts
-  - Inter — SIL Open Font License 1.1 — https://github.com/rsms/inter
+  - None bundled yet (the platform font is used). Planned: Inter — SIL Open Font License 1.1
 
 Icons
-  - (to be added when an icon set is bundled)
+  - Material Icons font (bundled by Flutter) — Apache-2.0 — https://github.com/google/material-design-icons
 
 Dart / Flutter packages
   - Flutter (framework, engine, default template assets) — BSD-3-Clause — https://github.com/flutter/flutter
   - (generated list; updated on every release)
 
 Android / Kotlin libraries
+  - Kotlin standard library — Apache-2.0 — https://github.com/JetBrains/kotlin
+  - AndroidX libraries used by the Flutter embedding — Apache-2.0 — https://developer.android.com/jetpack/androidx
   - (generated list; updated on every release)
+
+Test-only (not bundled in the app)
+  - JUnit 4 — EPL-1.0 — https://junit.org/junit4/
+  - JSON-java (org.json) — Public Domain — https://github.com/stleary/JSON-java
