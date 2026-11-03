@@ -26,14 +26,14 @@ My running checklist for Unscroll. Ticking things off as I go.
 - [x] pigeon setup (`pigeons/engine_api.dart`)
 - [x] kotlin engine: state store (AtomicFile), foreground service, boot receiver, day/clock helper + tests for clock tampering
 - [x] `lib/design_system/` from the tokens
-- [ ] debug gallery screen for the design-system components
+- [x] debug gallery screen for the design-system components
 - [x] onboarding + a separate disclosure screen for each permission (usage, accessibility, overlay, notifications) + battery-optimization help per phone brand
 - [x] insights: today, per-app list, week chart
 - [x] app blocking: block list + block screen
 - [x] daily limits per app, warnings at 5 and 1 min
-- [ ] app groups with a shared limit
+- [x] app groups with a shared limit
 - [x] mindful pause screen (wait time that grows with each open)
-- [ ] breathing animation + "why are you opening this?" prompt on the pause screen
+- [x] breathing animation + "why are you opening this?" prompt on the pause screen
 - [x] focus timer that blocks the chosen apps
 - [x] about screen: disclaimer, licenses, privacy
 - [ ] security/privacy review → tag `v0.1.0` → GitHub release
@@ -44,7 +44,7 @@ My running checklist for Unscroll. Ticking things off as I go.
 - [x] website + keyword blocking through the browser address bar
 - [ ] growing plant for focus sessions, session history
 - [ ] streaks, achievements, daily goal
-- [x] open limits, longer waits each open (auto-close after N minutes still to do)
+- [x] open limits, longer waits each open, auto-close after N minutes
 
 ## v0.3
 - [ ] strict mode: uninstall protection, lock settings, delay before rules can be loosened
