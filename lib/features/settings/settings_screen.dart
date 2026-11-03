@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../app_state.dart';
+import '../../debug/component_gallery.dart';
 import '../../design_system/components/surfaces.dart';
 import '../../design_system/theme.dart';
 import '../../design_system/tokens.dart';
@@ -92,6 +94,27 @@ class SettingsScreen extends StatelessWidget {
                     applicationLegalese: 'Free software under the GNU GPL v3 or later. No warranty.',
                   ),
                 ),
+                if (kDebugMode) ...[
+                  const Divider(),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      Icons.palette_outlined,
+                      color: context.colors.accentText,
+                    ),
+                    title: const Text('Component gallery'),
+                    subtitle: const Text('Debug builds only'),
+                    trailing: Icon(
+                      Icons.chevron_right,
+                      color: context.colors.textMuted,
+                    ),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ComponentGalleryScreen(),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
