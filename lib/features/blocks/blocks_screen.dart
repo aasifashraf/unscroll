@@ -9,8 +9,10 @@ import '../../design_system/tokens.dart';
 import '../../engine/engine_api.g.dart';
 import '../../util/format.dart';
 import '../apps/app_detail_screen.dart';
+import 'group_editor_screen.dart';
 import 'quick_block_sheet.dart';
 import 'schedules_screen.dart';
+import 'short_videos_screen.dart';
 import 'websites_screen.dart';
 
 class BlocksScreen extends StatelessWidget {
@@ -53,6 +55,8 @@ class BlocksScreen extends StatelessWidget {
               .labelOf(a.packageName)
               .compareTo(state.labelOf(b.packageName)),
         );
+      final groups = [...?snap?.groups]
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       final quickUntil = snap?.quickBlockUntil;
       final activeSchedules =
           snap?.schedules.where((s) => s.enabled).length ?? 0;
@@ -94,6 +98,18 @@ class BlocksScreen extends StatelessWidget {
             ),
             child: Column(
               children: [
+                _NavRow(
+                  icon: Icons.smart_display_outlined,
+                  title: 'Short videos',
+                  subtitle:
+                      '${_count(state.shortForm.where((f) => f.blocked).length, 'feed')} blocked',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ShortVideosScreen(state: state),
+                    ),
+                  ),
+                ),
+                const Divider(),
                 _NavRow(
                   icon: Icons.language,
                   title: 'Websites',
@@ -190,6 +206,69 @@ class BlocksScreen extends StatelessWidget {
                 ],
               ),
             ),
+          const SizedBox(height: Space.xl),
+          SectionTitle(
+            'Groups',
+            trailing: TextButton.icon(
+              onPressed: () => openGroupEditor(context, state),
+              icon: const Icon(Icons.add),
+              label: const Text('New group'),
+            ),
+          ),
+          if (groups.isEmpty)
+            Text(
+              'Give a few apps one shared daily limit, like an hour for all your social apps.',
+              style: context.text.bodySmall,
+            )
+          else
+            UCard(
+              padding: const EdgeInsets.symmetric(
+                horizontal: Space.lg,
+                vertical: Space.xs,
+              ),
+              child: Column(
+                children: [
+                  for (final g in groups)
+                    InkWell(
+                      onTap: () => openGroupEditor(context, state, g),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          minHeight: Sizes.listRowTwoLine,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.folder_outlined,
+                              color: context.colors.accentText,
+                            ),
+                            const SizedBox(width: Space.md),
+                            Expanded(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    g.name.isEmpty ? 'Group' : g.name,
+                                    style: context.text.subtitle,
+                                  ),
+                                  Text(
+                                    _describeGroup(g),
+                                    style: context.text.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.chevron_right,
+                              color: context.colors.textMuted,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           const SizedBox(height: Space.lg),
           Text(
             'Phone, Messages, your keyboard and home screen are never blocked.',
@@ -203,6 +282,13 @@ class BlocksScreen extends StatelessWidget {
 
   static String _count(int n, String noun) => '$n $noun${n == 1 ? '' : 's'}';
 
+  static String _describeGroup(GroupMsg g) => [
+    _count(g.packages.length, 'app'),
+    '${formatDuration(Duration(minutes: g.dailyLimitMinutes))} a day',
+    if (g.limitDays.length < 7)
+      g.limitDays.map((d) => weekdayShort[d - 1]).join(', '),
+  ].join(' · ');
+
   String _describe(AppRuleMsg r) {
     if (r.blocked) return 'Blocked';
     return [
@@ -210,6 +296,8 @@ class BlocksScreen extends StatelessWidget {
         '${formatDuration(Duration(minutes: r.dailyLimitMinutes!))} a day',
       if (r.pauseSeconds != null) '${r.pauseSeconds} s pause',
       if (r.openLimit != null) '${r.openLimit} opens',
+      if (r.sessionLimitMinutes != null)
+        '${formatDuration(Duration(minutes: r.sessionLimitMinutes!))} per open',
     ].join(' · ');
   }
 }

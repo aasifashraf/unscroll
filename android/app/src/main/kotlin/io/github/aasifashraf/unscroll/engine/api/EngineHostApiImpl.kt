@@ -15,12 +15,17 @@ import android.os.PowerManager
 import android.os.Process
 import android.provider.Settings
 import io.github.aasifashraf.unscroll.engine.core.Engine
+import io.github.aasifashraf.unscroll.engine.core.EngineLogic
+import io.github.aasifashraf.unscroll.engine.rules.AppGroup
 import io.github.aasifashraf.unscroll.engine.rules.AppRule
 import io.github.aasifashraf.unscroll.engine.rules.FocusSession
 import io.github.aasifashraf.unscroll.engine.rules.RuleEngine
 import io.github.aasifashraf.unscroll.engine.rules.Schedule
 import io.github.aasifashraf.unscroll.engine.rules.UrlRules
+import io.github.aasifashraf.unscroll.engine.shortform.ShortFormMap
+import io.github.aasifashraf.unscroll.engine.shortform.ShortFormRules
 import io.github.aasifashraf.unscroll.engine.store.FocusRecord
+import io.github.aasifashraf.unscroll.engine.usage.AppUsage
 import io.github.aasifashraf.unscroll.engine.usage.UsageAggregator
 import io.github.aasifashraf.unscroll.engine.usage.UsageReader
 import java.io.ByteArrayOutputStream
@@ -85,27 +90,41 @@ class EngineHostApiImpl(appContext: Context) : EngineHostApi {
             val start = if (back == 0) today.dayStartMillis else startOf(todayDate.minusDays(back.toLong()), zone)
             val end = if (back == 0) now else if (back == 1) today.dayStartMillis else startOf(todayDate.minusDays(back - 1L), zone)
             val read = Engine.usage.read(start - UsageReader.LOOKBACK_MILLIS, end)
-            val apps = UsageAggregator.aggregate(read.events, start, end)
+            val all = UsageAggregator.aggregate(read.events, start, end)
+            val apps = all
                 .filterKeys { it !in hidden }
                 .map { (pkg, u) -> AppUsageInfo(pkg, u.millis, u.opens.toLong()) }
                 .sortedByDescending { it.millis }
             val unlocks = Engine.usage.read(start, end).unlocks
-            DayUsage(start, apps.sumOf { it.millis }, unlocks.toLong(), apps, if (back == 0) limitsToday(apps) else emptyList())
+            val (limits, groupLimits) = if (back == 0) limitsToday(all) else emptyList<LimitStatus>() to emptyList()
+            DayUsage(start, apps.sumOf { it.millis }, unlocks.toLong(), apps, limits, groupLimits)
         }
     }
 
-    /** Limits that apply today, with the allowance including today's extensions. */
-    private fun limitsToday(apps: List<AppUsageInfo>): List<LimitStatus> {
+    /**
+     * App and group limits that apply today, with allowances including today's extensions.
+     * Group usage is summed from the same aggregate the engine uses.
+     */
+    private fun limitsToday(usage: Map<String, AppUsage>): Pair<List<LimitStatus>, List<GroupLimitStatus>> {
         val day = Engine.today() // first: a new day resets today's extra minutes
         val state = store.state
         val weekday = Instant.ofEpochMilli(day.trustedWallMillis).atZone(day.zone).dayOfWeek
-        return state.engine.rules.values
+        val apps = state.engine.rules.values
             .mapNotNull { r ->
                 RuleEngine.allowedTodayMillis(r, state.engine, weekday)?.let { allowed ->
-                    LimitStatus(r.packageName, apps.firstOrNull { it.packageName == r.packageName }?.millis ?: 0L, allowed)
+                    LimitStatus(r.packageName, usage[r.packageName]?.millis ?: 0L, allowed)
                 }
             }
             .sortedBy { it.allowedMillis - it.usedMillis } // least time left first
+        val groupUsage = RuleEngine.groupUsageMillis(state.engine.groups, usage, Engine.system.neverBlock())
+        val groups = state.engine.groups
+            .mapNotNull { g ->
+                RuleEngine.groupAllowedTodayMillis(g, state.engine, weekday)?.let { allowed ->
+                    GroupLimitStatus(g.id, g.name, groupUsage[g.id] ?: 0L, allowed)
+                }
+            }
+            .sortedBy { it.allowedMillis - it.usedMillis }
+        return apps to groups
     }
 
     override fun getSnapshot(): EngineSnapshot {
@@ -113,10 +132,16 @@ class EngineHostApiImpl(appContext: Context) : EngineHostApi {
         val s = store.state
         return EngineSnapshot(
             rules = s.engine.rules.values.map { r ->
-                AppRuleMsg(r.packageName, r.blocked, r.dailyLimitMinutes?.toLong(), r.limitDays.map { it.value.toLong() }.sorted(), r.pauseSeconds?.toLong(), r.openLimit?.toLong())
+                AppRuleMsg(
+                    r.packageName, r.blocked, r.dailyLimitMinutes?.toLong(), r.limitDays.map { it.value.toLong() }.sorted(),
+                    r.pauseSeconds?.toLong(), r.openLimit?.toLong(), r.askIntention, r.sessionLimitMinutes?.toLong(),
+                )
             },
             schedules = s.engine.schedules.map { sc ->
                 ScheduleMsg(sc.id, sc.name, sc.enabled, sc.days.map { it.value.toLong() }.sorted(), sc.startMinute.toLong(), sc.endMinute.toLong(), sc.packages.sorted())
+            },
+            groups = s.engine.groups.map { g ->
+                GroupMsg(g.id, g.name, g.packages.sorted(), g.dailyLimitMinutes.toLong(), g.limitDays.map { it.value.toLong() }.sorted())
             },
             focus = s.engine.focus?.takeIf { it.endsAt > now }?.let { FocusMsg(it.startedAt, it.endsAt, it.packages.sorted()) },
             quickBlockUntil = s.engine.quickBlockUntil?.takeIf { it > now },
@@ -127,6 +152,8 @@ class EngineHostApiImpl(appContext: Context) : EngineHostApi {
             dayStartMillis = Engine.today().dayStartMillis,
             focusHistory = s.focusHistory.takeLast(100).map { FocusRecordMsg(it.startedAt, it.endedAt, it.completed) },
             engineNowMillis = now,
+            declinedToday = s.declinedToday.toLong(),
+            declinedTotal = s.declinedTotal,
         )
     }
 
@@ -141,6 +168,9 @@ class EngineHostApiImpl(appContext: Context) : EngineHostApi {
                 .ifEmpty { DayOfWeek.entries.toSet() },
             pauseSeconds = rule.pauseSeconds?.toInt()?.takeIf { it in 1..RuleEngine.MAX_PAUSE_SECONDS },
             openLimit = rule.openLimit?.toInt()?.takeIf { it in 1..500 },
+            askIntention = rule.askIntention,
+            sessionLimitMinutes = rule.sessionLimitMinutes
+                ?.takeIf { it in RuleEngine.MIN_SESSION_MINUTES.toLong()..RuleEngine.MAX_SESSION_MINUTES.toLong() }?.toInt(),
         )
         mutate { it.copy(engine = it.engine.copy(rules = it.engine.rules + (clean.packageName to clean))) }
     }
@@ -167,6 +197,36 @@ class EngineHostApiImpl(appContext: Context) : EngineHostApi {
 
     override fun removeSchedule(id: String) =
         mutate { st -> st.copy(engine = st.engine.copy(schedules = st.engine.schedules.filterNot { it.id == id })) }
+
+    override fun setGroup(group: GroupMsg) {
+        if (group.id.isBlank() || group.id.length > 64) throw FlutterError("invalid", "Group id is invalid")
+        // Cut, not refused, like schedule names (the field may count characters differently).
+        val name = EngineLogic.truncateCodePoints(group.name.trim(), MAX_GROUP_NAME).trim()
+        if (name.isEmpty()) throw FlutterError("invalid", "Give the group a name")
+        if (group.packages.size > MAX_GROUP_APPS) throw FlutterError("invalid", "A group can hold up to $MAX_GROUP_APPS apps")
+        val limit = group.dailyLimitMinutes.takeIf { it in 1L..24 * 60L }?.toInt()
+            ?: throw FlutterError("invalid", "The daily limit must be 1–1440 minutes")
+        // Apps needed for calls, messages or the phone itself are left out, like in schedules.
+        val never = Engine.system.neverBlock()
+        val packages = group.packages.filter { it.isNotBlank() && it.length <= 255 && it !in never }.toSet()
+        if (packages.isEmpty()) throw FlutterError("invalid", "Pick at least one app")
+        val clean = AppGroup(
+            id = group.id,
+            name = name,
+            packages = packages,
+            dailyLimitMinutes = limit,
+            limitDays = group.limitDays.mapNotNull { d -> d.toInt().takeIf { it in 1..7 }?.let(DayOfWeek::of) }.toSet()
+                .ifEmpty { DayOfWeek.entries.toSet() },
+        )
+        mutate { st ->
+            val groups = st.engine.groups
+            val next = if (groups.any { it.id == clean.id }) groups.map { if (it.id == clean.id) clean else it } else groups + clean
+            st.copy(engine = st.engine.copy(groups = next))
+        }
+    }
+
+    override fun removeGroup(id: String) =
+        mutate { st -> st.copy(engine = st.engine.copy(groups = st.engine.groups.filterNot { it.id == id })) }
 
     override fun addBlockedSite(site: String): Boolean {
         val host = UrlRules.normalizeSite(site) ?: return false
@@ -219,9 +279,35 @@ class EngineHostApiImpl(appContext: Context) : EngineHostApi {
         mutate { it.copy(settings = it.settings.copy(dailyGoalMinutes = minutes.toInt())) }
     }
 
+    override fun getShortFormApps(): List<ShortFormAppMsg> {
+        val s = store.state
+        return ShortFormMap.apps.map { a ->
+            val version = Engine.system.versionCode(a.packageName)
+            ShortFormAppMsg(
+                packageName = a.packageName,
+                label = a.feedName,
+                installed = version != null,
+                blocked = a.packageName in s.engine.shortFormBlocked,
+                lastDetectedAt = s.shortFormLastSeen[a.packageName],
+                maybeOutdated = ShortFormRules.maybeOutdated(s.shortFormSuspect[a.packageName], version),
+            )
+        }
+    }
+
+    override fun setShortFormBlocked(packageName: String, blocked: Boolean) {
+        if (ShortFormMap.forPackage(packageName) == null) throw FlutterError("invalid", "Short videos can't be blocked in this app")
+        if (blocked) requireBlockable(packageName)
+        mutate { EngineLogic.withShortFormBlocked(it, packageName, blocked) }
+    }
+
     private fun mutate(transform: (io.github.aasifashraf.unscroll.engine.store.PersistedState) -> io.github.aasifashraf.unscroll.engine.store.PersistedState) {
         store.update(transform)
         Engine.onStateChanged()
+    }
+
+    private companion object {
+        const val MAX_GROUP_NAME = 40
+        const val MAX_GROUP_APPS = 200
     }
 
     private fun isNeverBlock(pkg: String) = pkg in Engine.system.neverBlock()

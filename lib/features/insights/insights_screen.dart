@@ -120,6 +120,26 @@ class _InsightsScreenState extends State<InsightsScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: Space.sm),
+            // Counted by the engine when you leave a pause screen without opening the app. The
+            // engine keeps today's count and a lifetime total (no per-week history).
+            Row(
+              children: [
+                Expanded(
+                  child: StatTile(
+                    label: 'Chose not to open today',
+                    value: '${state.snapshot?.declinedToday ?? 0}',
+                  ),
+                ),
+                const SizedBox(width: Space.sm),
+                Expanded(
+                  child: StatTile(
+                    label: 'Chose not to open, all time',
+                    value: '${state.snapshot?.declinedTotal ?? 0}',
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: Space.xl),
             const SectionTitle('Most used'),
             if (apps.isEmpty)

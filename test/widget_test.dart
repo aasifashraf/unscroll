@@ -6,8 +6,11 @@ import 'package:unscroll/design_system/theme.dart';
 import 'package:unscroll/engine/engine_api.g.dart';
 import 'package:unscroll/features/apps/app_detail_screen.dart';
 import 'package:unscroll/features/blocks/blocks_screen.dart';
+import 'package:unscroll/features/blocks/group_editor_screen.dart';
+import 'package:unscroll/features/blocks/short_videos_screen.dart';
 import 'package:unscroll/features/blocks/websites_screen.dart';
 import 'package:unscroll/features/home/home_screen.dart';
+import 'package:unscroll/features/insights/insights_screen.dart';
 import 'package:unscroll/main.dart';
 
 import 'dart:async';
@@ -53,6 +56,10 @@ Future<void> pumpScreen(WidgetTester tester, Widget screen) async {
   );
   await tester.pumpAndSettle();
 }
+
+/// Scrolls the screen's list until [finder] is built and on screen (lists build lazily).
+Future<void> _scrollTo(WidgetTester tester, Finder finder) => tester
+    .scrollUntilVisible(finder, 200, scrollable: find.byType(Scrollable).first);
 
 void main() {
   group('first run', () {
@@ -147,6 +154,23 @@ void main() {
       await pumpApp(tester, engine);
       expect(find.text('Insta'), findsOneWidget);
       expect(find.text('15m left'), findsOneWidget);
+    });
+
+    testWidgets('shows how often you chose not to open an app today', (
+      tester,
+    ) async {
+      final engine = FakeEngine()
+        ..declinedToday = 3
+        ..declinedTotal = 12;
+      await pumpApp(tester, engine);
+      expect(find.text('Chose not to open: 3 today'), findsOneWidget);
+    });
+
+    testWidgets('hides the "chose not to open" stat until it happens', (
+      tester,
+    ) async {
+      await pumpApp(tester, FakeEngine()..declinedTotal = 12);
+      expect(find.textContaining('Chose not to open'), findsNothing);
     });
 
     testWidgets('empty limits state invites the next step', (tester) async {
@@ -419,6 +443,70 @@ void main() {
       expect(engine.calls.last, 'removeRule com.insta');
     });
 
+    testWidgets('a session limit saves 15 minutes and steps by 5', (
+      tester,
+    ) async {
+      final engine = FakeEngine();
+      final state = AppState(engine);
+      await state.refresh();
+      await pumpScreen(
+        tester,
+        AppDetailScreen(state: state, packageName: 'com.insta'),
+      );
+
+      await tester.tap(find.text('Session limit'));
+      await tester.pumpAndSettle();
+      expect(engine.rules['com.insta']!.sessionLimitMinutes, 15);
+      expect(find.text('15m'), findsOneWidget); // the stepper
+
+      await tester.tap(find.byTooltip('More').last);
+      await tester.pumpAndSettle();
+      expect(engine.rules['com.insta']!.sessionLimitMinutes, 20);
+
+      await tester.tap(find.text('Session limit'));
+      await tester.pumpAndSettle();
+      expect(engine.calls.last, 'removeRule com.insta');
+    });
+
+    testWidgets('the intention prompt can be turned on with the pause', (
+      tester,
+    ) async {
+      final engine = FakeEngine();
+      engine.rules['com.insta'] = AppRuleMsg(
+        packageName: 'com.insta',
+        blocked: false,
+        pauseSeconds: 5,
+        sessionLimitMinutes: 30,
+        limitDays: [1, 2, 3, 4, 5, 6, 7],
+      );
+      final state = AppState(engine);
+      await state.refresh();
+      await pumpScreen(
+        tester,
+        AppDetailScreen(state: state, packageName: 'com.insta'),
+      );
+
+      await tester.tap(find.text("Ask why I'm opening it"));
+      await tester.pumpAndSettle();
+      final rule = engine.rules['com.insta']!;
+      expect(rule.askIntention, isTrue);
+      expect(rule.pauseSeconds, 5);
+      expect(rule.sessionLimitMinutes, 30, reason: 'other settings are kept');
+    });
+
+    testWidgets('the intention prompt is only offered with a pause', (
+      tester,
+    ) async {
+      final engine = FakeEngine();
+      final state = AppState(engine);
+      await state.refresh();
+      await pumpScreen(
+        tester,
+        AppDetailScreen(state: state, packageName: 'com.insta'),
+      );
+      expect(find.text("Ask why I'm opening it"), findsNothing);
+    });
+
     testWidgets('an engine refusal is shown to the user', (tester) async {
       final engine = FakeEngine();
       final state = AppState(engine);
@@ -430,6 +518,206 @@ void main() {
       await tester.tap(find.text('Block completely'));
       await tester.pumpAndSettle();
       expect(find.textContaining('can\'t be limited'), findsOneWidget);
+    });
+  });
+
+  group('app groups', () {
+    testWidgets('home lists a group limit from the engine', (tester) async {
+      final engine = FakeEngine();
+      engine.groups['g1'] = GroupMsg(
+        id: 'g1',
+        name: 'Social',
+        packages: ['com.insta', 'com.tube'],
+        dailyLimitMinutes: 60,
+        limitDays: [1, 2, 3, 4, 5, 6, 7],
+      );
+      await pumpApp(tester, engine);
+      expect(find.text('No limits yet'), findsNothing);
+      expect(find.text('Social'), findsOneWidget);
+      expect(
+        find.text('30m left'),
+        findsOneWidget,
+      ); // 60 min - 30 used by Insta
+      expect(find.byIcon(Icons.folder_outlined), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp('^Group, Social')), findsOneWidget);
+    });
+
+    testWidgets('quick block counts apps that are only in a group', (
+      tester,
+    ) async {
+      final engine = FakeEngine();
+      engine.groups['g1'] = GroupMsg(
+        id: 'g1',
+        name: 'Social',
+        packages: ['com.insta', 'com.tube'],
+        dailyLimitMinutes: 60,
+        limitDays: [1, 2, 3, 4, 5, 6, 7],
+      );
+      await pumpApp(tester, engine);
+      await tester.tap(find.text('Quick block'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Blocks your 2 apps'), findsOneWidget);
+      await tester.tap(find.text('Start'));
+      await tester.pumpAndSettle();
+      expect(engine.calls, contains('startQuickBlock 60'));
+    });
+
+    testWidgets('focus starts with the apps in groups too', (tester) async {
+      final engine = FakeEngine();
+      engine.groups['g1'] = GroupMsg(
+        id: 'g1',
+        name: 'Social',
+        packages: ['com.insta', 'com.tube'],
+        dailyLimitMinutes: 60,
+        limitDays: [1, 2, 3, 4, 5, 6, 7],
+      );
+      await pumpApp(tester, engine);
+      await tester.tap(find.text('Focus').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Apps to pause (2)'), findsOneWidget);
+      await tester.tap(find.text('Start focus'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(engine.calls, contains('startFocus 25 com.insta,com.tube'));
+    });
+
+    testWidgets("home shows the engine's group numbers, not its own sum", (
+      tester,
+    ) async {
+      final engine = _GroupStatusEngine();
+      engine.groups['g1'] = GroupMsg(
+        id: 'g1',
+        name: 'Social',
+        packages: ['com.insta'],
+        dailyLimitMinutes: 60,
+        limitDays: [1, 2, 3, 4, 5, 6, 7],
+      );
+      await pumpApp(tester, engine);
+      expect(find.text('Used up'), findsOneWidget);
+    });
+
+    testWidgets('creating a group in the editor sends it to the engine', (
+      tester,
+    ) async {
+      final engine = FakeEngine();
+      final state = AppState(engine);
+      addTearDown(state.dispose);
+      await state.refresh();
+      await pumpScreen(tester, BlocksScreen(state: state));
+
+      await tester.tap(find.text('New group'));
+      await tester.pumpAndSettle();
+      expect(find.byType(GroupEditorScreen), findsOneWidget);
+      await tester.enterText(find.byType(TextField).first, 'Social');
+      await tester.tap(find.text('Choose'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Insta'));
+      await tester.tap(find.text('Tube'));
+      await tester.pump();
+      await tester.tap(find.textContaining('Done'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('More')); // 1h -> 1h 5m
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expect(engine.groups, hasLength(1));
+      final group = engine.groups.values.single;
+      expect(group.name, 'Social');
+      expect(group.packages.toSet(), {'com.insta', 'com.tube'});
+      expect(group.dailyLimitMinutes, 65);
+      expect(group.limitDays, [1, 2, 3, 4, 5, 6, 7]);
+      expect(find.byType(GroupEditorScreen), findsNothing);
+      await _scrollTo(tester, find.text('Social'));
+      expect(find.text('Social'), findsOneWidget); // listed in Blocks
+    });
+
+    testWidgets('saving twice updates one group instead of making two', (
+      tester,
+    ) async {
+      final engine = FakeEngine();
+      final state = AppState(engine);
+      addTearDown(state.dispose);
+      await state.refresh();
+      await pumpScreen(tester, GroupEditorScreen(state: state));
+      await tester.enterText(find.byType(TextField).first, 'Social');
+      await tester.tap(find.text('Choose'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Insta'));
+      await tester.pump();
+      await tester.tap(find.textContaining('Done'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Save'));
+      await tester.tap(find.text('Save'), warnIfMissed: false);
+      await tester.pumpAndSettle();
+      expect(engine.calls.where((c) => c.startsWith('setGroup')), hasLength(1));
+    });
+
+    testWidgets('a group can be edited and deleted', (tester) async {
+      final engine = FakeEngine();
+      engine.groups['g1'] = GroupMsg(
+        id: 'g1',
+        name: 'Social',
+        packages: ['com.insta'],
+        dailyLimitMinutes: 60,
+        limitDays: [6, 7],
+      );
+      final state = AppState(engine);
+      addTearDown(state.dispose);
+      await state.refresh();
+      await pumpScreen(tester, BlocksScreen(state: state));
+
+      await _scrollTo(tester, find.text('Social'));
+      await tester.tap(find.text('Social'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Mon'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(engine.groups['g1']!.limitDays, [1, 6, 7]);
+      expect(engine.groups, hasLength(1));
+
+      await _scrollTo(tester, find.text('Social'));
+      await tester.tap(find.text('Social'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Delete group'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Delete this group? Its shared limit stops applying.'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(engine.groups, hasLength(1), reason: 'cancel keeps the group');
+
+      await tester.tap(find.byTooltip('Delete group'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      expect(engine.groups, isEmpty);
+      expect(engine.calls, contains('removeGroup g1'));
+    });
+
+    testWidgets('an engine refusal is shown and the editor stays open', (
+      tester,
+    ) async {
+      final engine = _RefusingGroupEngine();
+      final state = AppState(engine);
+      addTearDown(state.dispose);
+      await state.refresh();
+      await pumpScreen(tester, GroupEditorScreen(state: state));
+      await tester.enterText(find.byType(TextField).first, 'Social');
+      await tester.tap(find.text('Choose'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Insta'));
+      await tester.pump();
+      await tester.tap(find.textContaining('Done'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(find.text('Pick at least one app'), findsOneWidget);
+      expect(find.byType(GroupEditorScreen), findsOneWidget);
     });
   });
 
@@ -455,6 +743,138 @@ void main() {
       await tester.pumpAndSettle();
       expect(engine.sites, {'reddit.com'});
       expect(find.text('reddit.com'), findsOneWidget);
+    });
+  });
+
+  group('short videos', () {
+    testWidgets('Blocks shows how many feeds are blocked and opens the list', (
+      tester,
+    ) async {
+      final engine = FakeEngine()
+        ..shortFormBlocked.add('com.google.android.youtube');
+      final state = AppState(engine);
+      addTearDown(state.dispose);
+      await state.refresh();
+      await pumpScreen(tester, BlocksScreen(state: state));
+
+      expect(find.text('1 feed blocked'), findsOneWidget);
+      await tester.tap(find.text('Short videos'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Block the endless feeds. Keep messages, posts and search.'),
+        findsOneWidget,
+      );
+      for (final feed in [
+        'Instagram Reels',
+        'YouTube Shorts',
+        'Facebook Reels',
+        'Snapchat Spotlight',
+      ]) {
+        expect(find.text(feed), findsOneWidget);
+      }
+    });
+
+    testWidgets('toggling a feed asks the engine and updates the switch', (
+      tester,
+    ) async {
+      final engine = FakeEngine();
+      final state = AppState(engine);
+      addTearDown(state.dispose);
+      await state.refresh();
+      await pumpScreen(tester, ShortVideosScreen(state: state));
+
+      final insta = find.bySemanticsLabel('Instagram Reels');
+      expect(insta, findsOneWidget);
+      await tester.tap(find.text('Instagram Reels'));
+      await tester.pumpAndSettle();
+      expect(
+        engine.calls,
+        contains('setShortFormBlocked com.instagram.android true'),
+      );
+      expect(engine.shortFormBlocked, {'com.instagram.android'});
+      final tile = tester.widget<SwitchListTile>(
+        find.widgetWithText(SwitchListTile, 'Instagram Reels'),
+      );
+      expect(tile.value, isTrue);
+
+      await tester.tap(find.text('Instagram Reels'));
+      await tester.pumpAndSettle();
+      expect(engine.shortFormBlocked, isEmpty);
+    });
+
+    testWidgets('the TikTok row offers a limit instead and opens app detail', (
+      tester,
+    ) async {
+      final engine = FakeEngine(
+        apps: [
+          InstalledApp(
+            packageName: 'com.zhiliaoapp.musically',
+            label: 'TikTok',
+          ),
+        ],
+      );
+      final state = AppState(engine);
+      addTearDown(state.dispose);
+      await state.refresh();
+      await pumpScreen(tester, ShortVideosScreen(state: state));
+
+      expect(
+        find.text('The whole app is a feed. Use a limit instead.'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Set limit'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AppDetailScreen), findsOneWidget);
+      expect(find.text('TikTok'), findsOneWidget);
+    });
+
+    testWidgets('no TikTok row when TikTok is not installed', (tester) async {
+      final state = AppState(FakeEngine());
+      addTearDown(state.dispose);
+      await state.refresh();
+      await pumpScreen(tester, ShortVideosScreen(state: state));
+      expect(find.text('Set limit'), findsNothing);
+    });
+
+    testWidgets(
+      'health line warns only for a blocked feed that may be outdated',
+      (tester) async {
+        final engine = FakeEngine()
+          ..shortFormOutdated.add('com.snapchat.android');
+        final state = AppState(engine);
+        addTearDown(state.dispose);
+        await state.refresh();
+        await pumpScreen(tester, ShortVideosScreen(state: state));
+        // Outdated but not turned on: nothing to warn about.
+        expect(
+          find.text('Detection works for your installed apps.'),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.text('Snapchat Spotlight'));
+        await tester.pumpAndSettle();
+        expect(
+          find.text(
+            'Detection may be outdated for Snapchat Spotlight. Update Unscroll when a new version is out.',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.text('Detection works for your installed apps.'),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('says blocking needs accessibility when it is off', (
+      tester,
+    ) async {
+      final engine = FakeEngine(permissions: FakeEngine.none());
+      final state = AppState(engine);
+      addTearDown(state.dispose);
+      await state.refresh();
+      await pumpScreen(tester, ShortVideosScreen(state: state));
+      expect(find.textContaining('needs accessibility access'), findsOneWidget);
     });
   });
 
@@ -497,6 +917,31 @@ void main() {
       expect(find.textContaining('Add an app in Blocks first'), findsOneWidget);
     });
   });
+
+  group('insights', () {
+    testWidgets('shows today and all-time "chose not to open" counts', (
+      tester,
+    ) async {
+      final engine = FakeEngine()
+        ..declinedToday = 2
+        ..declinedTotal = 40;
+      final state = AppState(engine);
+      addTearDown(state.dispose);
+      await state.refresh();
+      await pumpScreen(tester, Scaffold(body: InsightsScreen(state: state)));
+
+      expect(find.text('Chose not to open today'), findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
+      expect(find.text('Chose not to open, all time'), findsOneWidget);
+      expect(find.text('40'), findsOneWidget);
+
+      // The 7-day view doesn't relabel a lifetime number as a weekly one.
+      await tester.tap(find.text('Last 7 days'));
+      await tester.pumpAndSettle();
+      expect(find.text('Chose not to open today'), findsOneWidget);
+      expect(find.text('Chose not to open, all time'), findsOneWidget);
+    });
+  });
 }
 
 class _ExtendedEngine extends FakeEngine {
@@ -519,6 +964,7 @@ class _ExtendedEngine extends FakeEngine {
               allowedMillis: l.allowedMillis + 5 * 60000,
             ),
         ],
+        groupLimits: today.groupLimits,
       ),
     ];
   }
@@ -534,6 +980,41 @@ class _NoLimitsTodayEngine extends FakeEngine {
         unlocks: d.unlocks,
         apps: d.apps,
         limits: [],
+        groupLimits: [],
       ),
   ];
+}
+
+class _GroupStatusEngine extends FakeEngine {
+  @override
+  Future<List<DayUsage>> getUsage(int days) async {
+    final week = await super.getUsage(days);
+    final today = week.last;
+    return [
+      ...week.take(week.length - 1),
+      DayUsage(
+        dayStartMillis: today.dayStartMillis,
+        totalMillis: today.totalMillis,
+        unlocks: today.unlocks,
+        apps: today.apps,
+        limits: today.limits,
+        groupLimits: [
+          GroupLimitStatus(
+            groupId: 'g1',
+            name: 'Social',
+            usedMillis: 61 * 60000,
+            allowedMillis: 60 * 60000,
+          ),
+        ],
+      ),
+    ];
+  }
+}
+
+class _RefusingGroupEngine extends FakeEngine {
+  @override
+  Future<void> setGroup(GroupMsg group) async => throw PlatformException(
+    code: 'invalid',
+    message: 'Pick at least one app',
+  );
 }

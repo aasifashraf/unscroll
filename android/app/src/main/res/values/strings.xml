@@ -5,11 +5,14 @@
     <!-- Block screen -->
     <string name="block_title">%1$s is resting</string>
     <string name="block_limit_message">You\'ve used today\'s time. It opens again tomorrow.</string>
+    <string name="block_group_message">You\'ve used today\'s time for %1$s. It opens again tomorrow.</string>
     <string name="block_opens_message">You\'ve opened it as often as you planned today.</string>
     <string name="block_focus_message">You\'re in a focus session.</string>
     <string name="block_quick_message">You asked for a quiet moment.</string>
     <string name="block_schedule_message">It\'s paused by your schedule.</string>
     <string name="block_always_message">You chose to keep this app away.</string>
+    <string name="block_session_message">Time for a break from %1$s.</string>
+    <string name="block_session_until">It opens again at %1$s.</string>
     <string name="block_site_title">This site is resting</string>
     <string name="block_site_message">You chose to block it in Unscroll.</string>
     <string name="block_until">Back at %1$s.</string>
@@ -26,6 +29,16 @@
     <string name="pause_leave">I don\'t need it</string>
     <string name="pause_wait">Continue in %1$d s</string>
     <string name="pause_continue">Continue</string>
+    <string name="pause_wait_description">Continue, available after a short pause</string>
+    <string name="pause_pick_reason">Pick a reason above to continue</string>
+    <string name="breathe_in">Breathe in</string>
+    <string name="breathe_out">Breathe out</string>
+    <string name="breathe_slowly">Breathe slowly</string>
+    <string name="intention_title">What are you here for?</string>
+    <string name="intention_message">A message</string>
+    <string name="intention_posting">Posting</string>
+    <string name="intention_bored">Just bored</string>
+    <string name="intention_other">Something else</string>
 
     <!-- Notifications -->
     <string name="channel_guard">Protection status</string>
@@ -39,8 +52,11 @@
     <string name="focus_done_title">Focus session complete</string>
     <string name="focus_done_text">Nice work. Your apps are back.</string>
 
+    <!-- Short-video feeds -->
+    <string name="shortform_closed">Short videos are off in %1$s. Everything else still works.</string>
+
     <!-- Accessibility service (shown in Android settings) -->
     <string name="accessibility_label">Unscroll blocking</string>
-    <string name="accessibility_description">Lets Unscroll notice which app or browser site is open so it can show the pause or block screen you set up. It only checks app names and the browser address bar against your own rules, on this phone. It never records what you type or read and sends nothing anywhere.</string>
+    <string name="accessibility_description">Lets Unscroll notice which app or browser site is open so it can show the pause or block screen you set up, and, in short-video apps you choose, which screen is open (by its name, not its content) so it can close the endless feed. It only checks app and screen names and the browser address bar against your own rules, on this phone. It never records what you type or read and sends nothing anywhere.</string>
     <string name="fgs_subtype">Keeps the user\'s own app limits, schedules and focus sessions active while other apps are open; shows focus countdown.</string>
 </resources>

@@ -3,6 +3,7 @@ package io.github.aasifashraf.unscroll.engine.system
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.provider.Telephony
 import android.telecom.TelecomManager
 import android.view.inputmethod.InputMethodManager
@@ -40,6 +41,14 @@ class SystemApps(private val context: Context) {
         Telephony.Sms.getDefaultSmsPackage(context)?.let(set::add)
         context.getSystemService(InputMethodManager::class.java)?.enabledInputMethodList?.forEach { set += it.packageName }
         return set
+    }
+
+    /** The installed version code of [packageName], or null when it isn't installed. */
+    fun versionCode(packageName: String): Long? = try {
+        val info = pm.getPackageInfo(packageName, 0)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
+    } catch (_: PackageManager.NameNotFoundException) {
+        null
     }
 
     fun label(packageName: String): String = try {

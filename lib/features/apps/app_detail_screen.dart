@@ -16,7 +16,8 @@ Future<void> openAppDetail(BuildContext context, AppState state, String pkg) =>
       ),
     );
 
-/// Limit, pause, open limit and full block for one app. Every change saves immediately.
+/// Limit, pause, open and session limits, and full block for one app. Every change saves
+/// immediately.
 class AppDetailScreen extends StatelessWidget {
   const AppDetailScreen({
     super.key,
@@ -45,7 +46,8 @@ class AppDetailScreen extends StatelessWidget {
           !rule.blocked &&
           rule.dailyLimitMinutes == null &&
           rule.pauseSeconds == null &&
-          rule.openLimit == null;
+          rule.openLimit == null &&
+          rule.sessionLimitMinutes == null;
       return empty ? api.removeRule(packageName) : api.setRule(rule);
     });
     if (error != null && context.mounted) {
@@ -61,6 +63,8 @@ class AppDetailScreen extends StatelessWidget {
     List<int>? days,
     Object? pause = _keep,
     Object? opens = _keep,
+    bool? askIntention,
+    Object? session = _keep,
   }) => AppRuleMsg(
     packageName: r.packageName,
     blocked: blocked ?? r.blocked,
@@ -70,6 +74,10 @@ class AppDetailScreen extends StatelessWidget {
     limitDays: days ?? r.limitDays,
     pauseSeconds: identical(pause, _keep) ? r.pauseSeconds : pause as int?,
     openLimit: identical(opens, _keep) ? r.openLimit : opens as int?,
+    askIntention: askIntention ?? r.askIntention,
+    sessionLimitMinutes: identical(session, _keep)
+        ? r.sessionLimitMinutes
+        : session as int?,
   );
 
   @override
@@ -127,7 +135,7 @@ class AppDetailScreen extends StatelessWidget {
                           ),
                   ),
                   if (rule.dailyLimitMinutes != null) ...[
-                    _MinuteStepper(
+                    MinuteStepper(
                       value: rule.dailyLimitMinutes!,
                       step: 5,
                       min: 5,
@@ -146,7 +154,7 @@ class AppDetailScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: Space.sm),
-                    _DayPicker(
+                    DayPicker(
                       days: rule.limitDays,
                       onChanged: (d) =>
                           _save(context, (r) => _copy(r, days: d)),
@@ -177,7 +185,7 @@ class AppDetailScreen extends StatelessWidget {
                           ),
                   ),
                   if (rule.pauseSeconds != null)
-                    _MinuteStepper(
+                    MinuteStepper(
                       value: rule.pauseSeconds!,
                       step: 5,
                       min: 5,
@@ -191,6 +199,18 @@ class AppDetailScreen extends StatelessWidget {
                           pause: ((r.pauseSeconds ?? 5) + d).clamp(5, 30),
                         ),
                       ),
+                    ),
+                  if (rule.pauseSeconds != null)
+                    _SwitchRow(
+                      title: "Ask why I'm opening it",
+                      subtitle: 'A gentle question on the pause screen. Your answer is never saved.',
+                      value: rule.askIntention,
+                      onChanged: rule.blocked
+                          ? null
+                          : (on) => _save(
+                              context,
+                              (r) => _copy(r, askIntention: on),
+                            ),
                     ),
                   const Divider(),
                   _SwitchRow(
@@ -207,7 +227,7 @@ class AppDetailScreen extends StatelessWidget {
                           ),
                   ),
                   if (rule.openLimit != null)
-                    _MinuteStepper(
+                    MinuteStepper(
                       value: rule.openLimit!,
                       step: 1,
                       min: 1,
@@ -219,6 +239,39 @@ class AppDetailScreen extends StatelessWidget {
                         (r) => _copy(
                           r,
                           opens: ((r.openLimit ?? 10) + d).clamp(1, 100),
+                        ),
+                      ),
+                    ),
+                  const Divider(),
+                  _SwitchRow(
+                    title: 'Session limit',
+                    subtitle: rule.sessionLimitMinutes == null
+                        ? 'Off'
+                        : 'Closes after ${formatDuration(Duration(minutes: rule.sessionLimitMinutes!))} in one go, then rests for 10 minutes',
+                    value: rule.sessionLimitMinutes != null,
+                    onChanged: rule.blocked
+                        ? null
+                        : (on) => _save(
+                            context,
+                            (r) => _copy(r, session: on ? 15 : null),
+                          ),
+                  ),
+                  if (rule.sessionLimitMinutes != null)
+                    MinuteStepper(
+                      value: rule.sessionLimitMinutes!,
+                      step: 5,
+                      min: 5,
+                      max: 120,
+                      format: (m) => formatDuration(Duration(minutes: m)),
+                      semantic: 'Session limit',
+                      onStep: (d) => _save(
+                        context,
+                        (r) => _copy(
+                          r,
+                          session: ((r.sessionLimitMinutes ?? 15) + d).clamp(
+                            5,
+                            120,
+                          ),
                         ),
                       ),
                     ),
@@ -293,8 +346,10 @@ class _SwitchRow extends StatelessWidget {
   );
 }
 
-class _MinuteStepper extends StatelessWidget {
-  const _MinuteStepper({
+/// A value with "Less" and "More" buttons (daily limit, pause length, open and session limits).
+class MinuteStepper extends StatelessWidget {
+  const MinuteStepper({
+    super.key,
     required this.value,
     required this.step,
     required this.min,
@@ -345,8 +400,9 @@ class _MinuteStepper extends StatelessWidget {
   );
 }
 
-class _DayPicker extends StatelessWidget {
-  const _DayPicker({required this.days, required this.onChanged});
+/// Weekday chips (ISO 1 = Mon … 7 = Sun); at least one day stays selected.
+class DayPicker extends StatelessWidget {
+  const DayPicker({super.key, required this.days, required this.onChanged});
 
   final List<int> days;
   final ValueChanged<List<int>> onChanged;

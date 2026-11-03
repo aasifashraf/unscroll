@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 
 import '../../app_state.dart';
@@ -11,6 +9,7 @@ import '../../design_system/tokens.dart';
 import '../../engine/engine_api.g.dart';
 import '../../util/format.dart';
 import '../apps/app_detail_screen.dart';
+import '../blocks/group_editor_screen.dart';
 import '../blocks/quick_block_sheet.dart';
 import 'home_shell.dart';
 
@@ -35,11 +34,55 @@ class HomeScreen extends StatelessWidget {
           : previous.map((d) => d.totalMillis).reduce((a, b) => a + b) ~/
                 previous.length;
       // Only picks the empty-state message; the limits shown come from the engine.
-      final hasLimits = (state.snapshot?.rules ?? []).any(
-        (r) => r.dailyLimitMinutes != null && !r.blocked,
-      );
+      final hasLimits =
+          (state.snapshot?.rules ?? []).any(
+            (r) => r.dailyLimitMinutes != null && !r.blocked,
+          ) ||
+          (state.snapshot?.groups ?? []).isNotEmpty;
       // Computed by the engine: only limits that apply today, extensions included.
       final limits = today?.limits ?? const <LimitStatus>[];
+      final groupLimits = today?.groupLimits ?? const <GroupLimitStatus>[];
+      // App and group rows together, least time left first (display order only).
+      final rows = [
+        for (final limit in limits)
+          (
+            left: limit.allowedMillis - limit.usedMillis,
+            row: _LimitRow(
+              label: state.labelOf(limit.packageName),
+              leading: AppIcon(
+                label: state.labelOf(limit.packageName),
+                icon: state.apps[limit.packageName]?.icon,
+              ),
+              usedMillis: limit.usedMillis,
+              allowedMillis: limit.allowedMillis,
+              onTap: () => openAppDetail(context, state, limit.packageName),
+            ),
+          ),
+        for (final g in groupLimits)
+          (
+            left: g.allowedMillis - g.usedMillis,
+            row: _LimitRow(
+              label: g.name.isEmpty ? 'Group' : g.name,
+              semanticLabel: 'Group, ${g.name.isEmpty ? 'unnamed' : g.name}',
+              leading: SizedBox.square(
+                dimension: Sizes.appIcon,
+                child: Icon(
+                  Icons.folder_outlined,
+                  color: context.colors.accentText,
+                ),
+              ),
+              usedMillis: g.usedMillis,
+              allowedMillis: g.allowedMillis,
+              onTap: () {
+                final group = state.snapshot?.groups
+                    .where((x) => x.id == g.groupId)
+                    .firstOrNull;
+                if (group != null) openGroupEditor(context, state, group);
+              },
+            ),
+          ),
+      ]..sort((a, b) => a.left.compareTo(b.left));
+      final declined = state.snapshot?.declinedToday ?? 0;
       return RefreshIndicator(
         onRefresh: state.refresh,
         child: ListView(
@@ -129,6 +172,13 @@ class HomeScreen extends StatelessWidget {
                   ],
                 ),
               ),
+            if (declined > 0) ...[
+              const SizedBox(height: Space.md),
+              StatusLine(
+                status: Status.good,
+                text: 'Chose not to open: $declined today',
+              ),
+            ],
             const SizedBox(height: Space.lg),
             Row(
               children: [
@@ -166,9 +216,9 @@ class HomeScreen extends StatelessWidget {
                 body: 'Add a daily limit to an app from Insights or Blocks.',
               )
             else if (!state.usageLoaded ||
-                (limits.isEmpty && state.usageRefreshing))
+                (rows.isEmpty && state.usageRefreshing))
               const SizedBox.shrink() // a limit just added is on its way
-            else if (limits.isEmpty)
+            else if (rows.isEmpty)
               EmptyState(
                 icon: Icons.event_available_outlined,
                 title: 'No limits today',
@@ -180,19 +230,7 @@ class HomeScreen extends StatelessWidget {
                   horizontal: Space.lg,
                   vertical: Space.xs,
                 ),
-                child: Column(
-                  children: [
-                    for (final limit in limits)
-                      _LimitRow(
-                        label: state.labelOf(limit.packageName),
-                        icon: state.apps[limit.packageName]?.icon,
-                        usedMillis: limit.usedMillis,
-                        allowedMillis: limit.allowedMillis,
-                        onTap: () =>
-                            openAppDetail(context, state, limit.packageName),
-                      ),
-                  ],
-                ),
+                child: Column(children: [for (final r in rows) r.row]),
               ),
           ],
         ),
@@ -242,14 +280,18 @@ class _QuickAction extends StatelessWidget {
 class _LimitRow extends StatelessWidget {
   const _LimitRow({
     required this.label,
-    required this.icon,
+    required this.leading,
+    this.semanticLabel,
     required this.usedMillis,
     required this.allowedMillis,
     required this.onTap,
   });
 
   final String label;
-  final Uint8List? icon;
+
+  /// Read out instead of [label] (e.g. "Group, Social").
+  final String? semanticLabel;
+  final Widget leading;
   final int usedMillis;
   final int allowedMillis;
   final VoidCallback onTap;
@@ -264,7 +306,7 @@ class _LimitRow extends StatelessWidget {
         constraints: const BoxConstraints(minHeight: Sizes.listRowTwoLine),
         child: Row(
           children: [
-            AppIcon(label: label, icon: icon),
+            leading,
             const SizedBox(width: Space.md),
             Expanded(
               child: Column(
@@ -276,6 +318,7 @@ class _LimitRow extends StatelessWidget {
                       Expanded(
                         child: Text(
                           label,
+                          semanticsLabel: semanticLabel,
                           style: context.text.subtitle,
                           overflow: TextOverflow.ellipsis,
                         ),

@@ -23,12 +23,26 @@ class FakeEngine extends EngineHostApi {
   List<DayUsage> usage;
   final rules = <String, AppRuleMsg>{};
   final schedules = <String, ScheduleMsg>{};
+  final groups = <String, GroupMsg>{};
   final sites = <String>{};
   List<String> keywords = [];
   FocusMsg? focus;
   int? quickBlockUntil;
   int goal = 180;
+  int declinedToday = 0;
+  int declinedTotal = 0;
   final calls = <String>[];
+
+  /// Feeds the user blocked, and feeds whose detection may be outdated.
+  final shortFormBlocked = <String>{};
+  final shortFormOutdated = <String>{};
+
+  static const shortFormFeeds = {
+    'com.instagram.android': 'Instagram Reels',
+    'com.google.android.youtube': 'YouTube Shorts',
+    'com.facebook.katana': 'Facebook Reels',
+    'com.snapchat.android': 'Snapchat Spotlight',
+  };
 
   /// How far the engine's clock is behind the phone's (after a manual clock change).
   int engineBehindMillis = 0;
@@ -68,6 +82,7 @@ class FakeEngine extends EngineHostApi {
             ),
           ],
           limits: [],
+          groupLimits: [],
         ),
     ];
   }
@@ -104,12 +119,24 @@ class FakeEngine extends EngineHostApi {
             allowedMillis: r.dailyLimitMinutes! * 60000,
           ),
     ],
+    groupLimits: [
+      for (final g in groups.values)
+        GroupLimitStatus(
+          groupId: g.id,
+          name: g.name,
+          usedMillis: day.apps
+              .where((a) => g.packages.contains(a.packageName))
+              .fold(0, (sum, a) => sum + a.millis),
+          allowedMillis: g.dailyLimitMinutes * 60000,
+        ),
+    ],
   );
 
   @override
   Future<EngineSnapshot> getSnapshot() async => EngineSnapshot(
     rules: rules.values.toList(),
     schedules: schedules.values.toList(),
+    groups: groups.values.toList(),
     focus: focus,
     quickBlockUntil: quickBlockUntil,
     blockedSites: sites.toList(),
@@ -119,6 +146,8 @@ class FakeEngine extends EngineHostApi {
     dayStartMillis: 0,
     focusHistory: [],
     engineNowMillis: DateTime.now().millisecondsSinceEpoch - engineBehindMillis,
+    declinedToday: declinedToday,
+    declinedTotal: declinedTotal,
   );
 
   @override
@@ -145,6 +174,18 @@ class FakeEngine extends EngineHostApi {
 
   @override
   Future<void> removeSchedule(String id) async => schedules.remove(id);
+
+  @override
+  Future<void> setGroup(GroupMsg group) async {
+    calls.add('setGroup ${group.id}');
+    groups[group.id] = group;
+  }
+
+  @override
+  Future<void> removeGroup(String id) async {
+    calls.add('removeGroup $id');
+    groups.remove(id);
+  }
 
   @override
   Future<bool> addBlockedSite(String site) async {
@@ -196,5 +237,30 @@ class FakeEngine extends EngineHostApi {
   Future<void> setDailyGoal(int minutes) async {
     calls.add('setDailyGoal $minutes');
     goal = minutes;
+  }
+
+  @override
+  Future<List<ShortFormAppMsg>> getShortFormApps() async => [
+    for (final e in shortFormFeeds.entries)
+      ShortFormAppMsg(
+        packageName: e.key,
+        label: e.value,
+        installed: true,
+        blocked: shortFormBlocked.contains(e.key),
+        maybeOutdated: shortFormOutdated.contains(e.key),
+      ),
+  ];
+
+  @override
+  Future<void> setShortFormBlocked(String packageName, bool blocked) async {
+    calls.add('setShortFormBlocked $packageName $blocked');
+    if (!shortFormFeeds.containsKey(packageName)) {
+      throw PlatformException(code: 'invalid', message: 'Not supported');
+    }
+    if (blocked) {
+      shortFormBlocked.add(packageName);
+    } else {
+      shortFormBlocked.remove(packageName);
+    }
   }
 }

@@ -8,7 +8,6 @@ import '../../design_system/components/charts.dart';
 import '../../design_system/components/surfaces.dart';
 import '../../design_system/theme.dart';
 import '../../design_system/tokens.dart';
-import '../../engine/engine_api.g.dart';
 import '../../util/format.dart';
 import '../apps/app_detail_screen.dart';
 
@@ -45,12 +44,7 @@ class _FocusScreenState extends State<FocusScreen> {
     super.dispose();
   }
 
-  Set<String> get _chosen =>
-      _apps ??
-      {
-        for (final r in widget.state.snapshot?.rules ?? const <AppRuleMsg>[])
-          r.packageName,
-      };
+  Set<String> get _chosen => _apps ?? widget.state.limitedApps;
 
   Future<void> _start() async {
     if (_starting) return; // double tap

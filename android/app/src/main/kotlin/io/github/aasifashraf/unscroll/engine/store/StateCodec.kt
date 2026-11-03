@@ -1,10 +1,13 @@
 package io.github.aasifashraf.unscroll.engine.store
 
 import io.github.aasifashraf.unscroll.engine.clock.DayState
+import io.github.aasifashraf.unscroll.engine.rules.AppGroup
 import io.github.aasifashraf.unscroll.engine.rules.AppRule
 import io.github.aasifashraf.unscroll.engine.rules.EngineState
 import io.github.aasifashraf.unscroll.engine.rules.FocusSession
+import io.github.aasifashraf.unscroll.engine.rules.RuleEngine
 import io.github.aasifashraf.unscroll.engine.rules.Schedule
+import io.github.aasifashraf.unscroll.engine.shortform.ShortFormMap
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -27,6 +30,21 @@ data class PersistedState(
     val focusHistory: List<FocusRecord> = emptyList(),
     /** "5 more minutes" taps used today per app (reset with the day). */
     val extensionsUsedToday: Map<String, Int> = emptyMap(),
+    /** Times the user chose not to open an app on the pause screen today (reset with the day). */
+    val declinedToday: Int = 0,
+    /** The same, since Unscroll was installed. */
+    val declinedTotal: Long = 0,
+    /** Per short-form app: trusted time the feed was last detected and closed. */
+    val shortFormLastSeen: Map<String, Long> = emptyMap(),
+    /**
+     * Per short-form app: the app version in which detection looked wrong (loop guard tripped or
+     * only the fallback worked). Shown as "detection may be outdated" while that version is installed.
+     */
+    val shortFormSuspect: Map<String, Long> = emptyMap(),
+    /** Per short-form app: the app version the detection map last matched in (gates the fallback). */
+    val shortFormMatchedVersion: Map<String, Long> = emptyMap(),
+    /** ShortFormMap.REVISION the two maps above were recorded with. */
+    val shortFormMapRevision: Int = 0,
 )
 
 /**
@@ -36,11 +54,13 @@ data class PersistedState(
 object StateCodec {
     const val VERSION = 1
     private const val MAX_HISTORY = 500
+    private const val MAX_DAILY_MINUTES = 24 * 60L
 
     fun encode(state: PersistedState): String = JSONObject().apply {
         put("version", VERSION)
         put("rules", JSONArray(state.engine.rules.values.map(::encodeRule)))
         put("schedules", JSONArray(state.engine.schedules.map(::encodeSchedule)))
+        put("groups", JSONArray(state.engine.groups.map(::encodeGroup)))
         state.engine.focus?.let {
             put("focus", JSONObject().put("startedAt", it.startedAt).put("endsAt", it.endsAt).put("packages", JSONArray(it.packages.sorted())))
         }
@@ -49,6 +69,14 @@ object StateCodec {
         put("blockedSites", JSONArray(state.engine.blockedSites.sorted()))
         put("blockedKeywords", JSONArray(state.engine.blockedKeywords.sorted()))
         put("extensionsUsedToday", JSONObject(state.extensionsUsedToday))
+        put("sessionCooldownUntil", JSONObject(state.engine.sessionCooldownUntil))
+        put("declinedToday", state.declinedToday)
+        put("declinedTotal", state.declinedTotal)
+        put("shortFormBlocked", JSONArray(state.engine.shortFormBlocked.sorted()))
+        put("shortFormLastSeen", JSONObject(state.shortFormLastSeen))
+        put("shortFormSuspect", JSONObject(state.shortFormSuspect))
+        put("shortFormMatchedVersion", JSONObject(state.shortFormMatchedVersion))
+        put("shortFormMapRevision", state.shortFormMapRevision)
         put("settings", JSONObject().put("onboardingDone", state.settings.onboardingDone).put("dailyGoalMinutes", state.settings.dailyGoalMinutes))
         state.day?.let {
             put(
@@ -74,6 +102,7 @@ object StateCodec {
         }
         val rules = root.objects("rules").mapNotNull { tryOrNull { decodeRule(it) } }.associateBy { it.packageName }
         val schedules = root.objects("schedules").mapNotNull { tryOrNull { decodeSchedule(it) } }
+        val groups = root.objects("groups").mapNotNull { tryOrNull { decodeGroup(it) } }.distinctBy { it.id }
         val focus = root.optJSONObject("focus")?.let { f ->
             tryOrNull { FocusSession(f.getLong("startedAt"), f.getLong("endsAt"), f.strings("packages").toSet()) }
         }
@@ -104,11 +133,20 @@ object StateCodec {
                 extraMinutesToday = root.optJSONObject("extraMinutesToday").intMap(),
                 blockedSites = root.strings("blockedSites").toSet(),
                 blockedKeywords = root.strings("blockedKeywords").toSet(),
+                groups = groups,
+                sessionCooldownUntil = root.optJSONObject("sessionCooldownUntil").positiveLongMap(),
+                shortFormBlocked = root.strings("shortFormBlocked").filter { it in ShortFormMap.packages }.toSet(),
             ),
             settings = settings,
             day = day,
             focusHistory = history,
             extensionsUsedToday = root.optJSONObject("extensionsUsedToday").intMap(),
+            declinedToday = (root.opt("declinedToday") as? Number)?.toLong()?.coerceIn(0, Int.MAX_VALUE.toLong())?.toInt() ?: 0,
+            declinedTotal = (root.opt("declinedTotal") as? Number)?.toLong()?.coerceAtLeast(0) ?: 0,
+            shortFormLastSeen = root.optJSONObject("shortFormLastSeen").positiveLongMap().shortFormOnly(),
+            shortFormSuspect = root.optJSONObject("shortFormSuspect").longMap(min = 0).shortFormOnly(),
+            shortFormMatchedVersion = root.optJSONObject("shortFormMatchedVersion").longMap(min = 0).shortFormOnly(),
+            shortFormMapRevision = (root.opt("shortFormMapRevision") as? Number)?.toInt()?.coerceAtLeast(0) ?: 0,
         )
     }
 
@@ -119,6 +157,8 @@ object StateCodec {
         put("limitDays", JSONArray(r.limitDays.map { it.value }.sorted()))
         r.pauseSeconds?.let { put("pauseSeconds", it) }
         r.openLimit?.let { put("openLimit", it) }
+        if (r.askIntention) put("askIntention", true)
+        r.sessionLimitMinutes?.let { put("sessionLimitMinutes", it) }
     }
 
     private fun decodeRule(o: JSONObject): AppRule {
@@ -130,6 +170,9 @@ object StateCodec {
             limitDays = days,
             pauseSeconds = o.intOrNull("pauseSeconds")?.takeIf { it > 0 }?.coerceAtMost(30),
             openLimit = o.intOrNull("openLimit")?.takeIf { it > 0 },
+            askIntention = o.opt("askIntention") == true,
+            sessionLimitMinutes = o.intOrNull("sessionLimitMinutes")?.takeIf { it > 0 }
+                ?.coerceIn(RuleEngine.MIN_SESSION_MINUTES, RuleEngine.MAX_SESSION_MINUTES),
         )
     }
 
@@ -151,6 +194,27 @@ object StateCodec {
             startMinute = start,
             endMinute = end,
             packages = o.strings("packages").toSet(),
+        )
+    }
+
+    private fun encodeGroup(g: AppGroup) = JSONObject()
+        .put("id", g.id).put("name", g.name)
+        .put("packages", JSONArray(g.packages.sorted()))
+        .put("dailyLimitMinutes", g.dailyLimitMinutes)
+        .put("limitDays", JSONArray(g.limitDays.map { it.value }.sorted()))
+
+    /** Drops a group without an id, apps or a positive limit (it could never apply). */
+    private fun decodeGroup(o: JSONObject): AppGroup {
+        val limit = o.getInt("dailyLimitMinutes")
+        val packages = o.strings("packages").filter { it.isNotBlank() }.toSet()
+        val id = o.getString("id")
+        require(limit > 0 && packages.isNotEmpty() && id.isNotBlank())
+        return AppGroup(
+            id = id,
+            name = o.optString("name", ""),
+            packages = packages,
+            dailyLimitMinutes = limit.coerceAtMost(24 * 60),
+            limitDays = o.ints("limitDays").filter { it in 1..7 }.map(DayOfWeek::of).toSet().ifEmpty { DayOfWeek.entries.toSet() },
         )
     }
 
@@ -181,8 +245,22 @@ object StateCodec {
         return (0 until array.length()).mapNotNull { (array.opt(it) as? Number)?.toInt() }
     }
 
+    /** Times (cool-down ends): non-numbers and values <= 0 dropped. */
+    private fun JSONObject?.positiveLongMap(): Map<String, Long> = longMap(min = 1)
+
+    /** Numbers of at least [min]; anything else dropped. */
+    private fun JSONObject?.longMap(min: Long): Map<String, Long> {
+        if (this == null) return emptyMap()
+        return keys().asSequence().mapNotNull { k -> (opt(k) as? Number)?.toLong()?.takeIf { it >= min }?.let { k to it } }.toMap()
+    }
+
+    private fun Map<String, Long>.shortFormOnly() = filterKeys { it in ShortFormMap.packages }
+
+    /** Per-day counters (extra minutes, extensions): negatives dropped, values capped at one day. */
     private fun JSONObject?.intMap(): Map<String, Int> {
         if (this == null) return emptyMap()
-        return keys().asSequence().mapNotNull { k -> (opt(k) as? Number)?.toInt()?.takeIf { it >= 0 }?.let { k to it } }.toMap()
+        return keys().asSequence().mapNotNull { k ->
+            (opt(k) as? Number)?.toLong()?.takeIf { it >= 0 }?.let { k to it.coerceAtMost(MAX_DAILY_MINUTES).toInt() }
+        }.toMap()
     }
 }

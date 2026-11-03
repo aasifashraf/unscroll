@@ -6,15 +6,18 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import io.github.aasifashraf.unscroll.engine.core.Engine
+import io.github.aasifashraf.unscroll.engine.shortform.ShortFormWatcher
 
 /**
  * Notices which app is open (for blocking) and reads browser address bars (for website
- * blocking). It reads only window/package names and the address-bar text, matches them
- * against the user's rules on the device, and stores nothing.
+ * blocking), and closes short-video feeds in apps the user chose. It reads only window/package
+ * names, the address-bar text, and in those apps the view IDs, class names and sizes of the
+ * screen (never its text), matches them against the user's rules on the device, and stores nothing.
  */
 class UnscrollAccessibilityService : AccessibilityService() {
     private var lastAddress: String? = null
     private var lastAddressCheck = 0L
+    private val shortForm = ShortFormWatcher(this)
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -34,6 +37,7 @@ class UnscrollAccessibilityService : AccessibilityService() {
 
     private fun handle(event: AccessibilityEvent) {
         val pkg = event.packageName?.toString() ?: return
+        shortForm.onEvent(event)
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 Engine.onForeground(pkg, event.className?.toString())
@@ -81,11 +85,13 @@ class UnscrollAccessibilityService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     override fun onUnbind(intent: Intent?): Boolean {
+        shortForm.stop()
         Engine.attachAccessibility(null)
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
+        shortForm.stop()
         Engine.attachAccessibility(null)
         super.onDestroy()
     }

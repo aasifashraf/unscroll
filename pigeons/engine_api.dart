@@ -58,6 +58,24 @@ class LimitStatus {
   int allowedMillis;
 }
 
+/// Today's state of one app group's shared limit, computed by the engine.
+class GroupLimitStatus {
+  GroupLimitStatus({
+    required this.groupId,
+    required this.name,
+    required this.usedMillis,
+    required this.allowedMillis,
+  });
+  String groupId;
+  String name;
+
+  /// Today's usage of all the group's apps added up.
+  int usedMillis;
+
+  /// Limit plus any "5 more minutes" taken for the group today.
+  int allowedMillis;
+}
+
 /// A system settings screen the user is sent to after an in-app disclosure.
 enum SettingsPage {
   usageAccess,
@@ -95,6 +113,7 @@ class DayUsage {
     required this.unlocks,
     required this.apps,
     required this.limits,
+    required this.groupLimits,
   });
   int dayStartMillis;
   int totalMillis;
@@ -105,6 +124,9 @@ class DayUsage {
 
   /// Only filled for today: limits that apply today.
   List<LimitStatus> limits;
+
+  /// Only filled for today: group limits that apply today.
+  List<GroupLimitStatus> groupLimits;
 }
 
 class AppRuleMsg {
@@ -115,6 +137,8 @@ class AppRuleMsg {
     required this.limitDays,
     this.pauseSeconds,
     this.openLimit,
+    this.askIntention = false,
+    this.sessionLimitMinutes,
   });
   String packageName;
   bool blocked;
@@ -124,6 +148,12 @@ class AppRuleMsg {
   List<int> limitDays;
   int? pauseSeconds;
   int? openLimit;
+
+  /// Ask "What are you here for?" on the pause screen (the answer is never stored).
+  bool askIntention;
+
+  /// Close the app after this many minutes in one open (5–120), then a 10-minute cool-down.
+  int? sessionLimitMinutes;
 }
 
 class ScheduleMsg {
@@ -143,6 +173,24 @@ class ScheduleMsg {
   int startMinute;
   int endMinute;
   List<String> packages;
+}
+
+/// Several apps sharing one daily limit.
+class GroupMsg {
+  GroupMsg({
+    required this.id,
+    required this.name,
+    required this.packages,
+    required this.dailyLimitMinutes,
+    required this.limitDays,
+  });
+  String id;
+  String name;
+  List<String> packages;
+  int dailyLimitMinutes;
+
+  /// ISO weekdays 1 (Mon) … 7 (Sun) the limit applies on.
+  List<int> limitDays;
 }
 
 class FocusMsg {
@@ -167,11 +215,38 @@ class FocusRecordMsg {
   bool completed;
 }
 
+/// One app whose short-video feed Unscroll can block.
+class ShortFormAppMsg {
+  ShortFormAppMsg({
+    required this.packageName,
+    required this.label,
+    required this.installed,
+    required this.blocked,
+    this.lastDetectedAt,
+    required this.maybeOutdated,
+  });
+  String packageName;
+
+  /// The feed's name, e.g. "Instagram Reels".
+  String label;
+  bool installed;
+
+  /// The user turned blocking on for this feed.
+  bool blocked;
+
+  /// When the feed was last closed, in engine time (see [EngineSnapshot.engineNowMillis]).
+  int? lastDetectedAt;
+
+  /// Detection looked wrong in the installed version of the app (it may have changed its screens).
+  bool maybeOutdated;
+}
+
 /// Everything the UI shows that the engine owns.
 class EngineSnapshot {
   EngineSnapshot({
     required this.rules,
     required this.schedules,
+    required this.groups,
     this.focus,
     this.quickBlockUntil,
     required this.blockedSites,
@@ -181,9 +256,12 @@ class EngineSnapshot {
     required this.dayStartMillis,
     required this.focusHistory,
     required this.engineNowMillis,
+    required this.declinedToday,
+    required this.declinedTotal,
   });
   List<AppRuleMsg> rules;
   List<ScheduleMsg> schedules;
+  List<GroupMsg> groups;
   FocusMsg? focus;
   int? quickBlockUntil;
   List<String> blockedSites;
@@ -195,6 +273,12 @@ class EngineSnapshot {
 
   /// The engine's tamper-resistant "now"; focus and quick-block times are in this frame.
   int engineNowMillis;
+
+  /// Times the user chose not to open an app on the pause screen today.
+  int declinedToday;
+
+  /// The same, since Unscroll was installed.
+  int declinedTotal;
 }
 
 @HostApi()
@@ -225,6 +309,11 @@ abstract class EngineHostApi {
 
   void removeSchedule(String id);
 
+  /// Creates or replaces the group with [group]'s id.
+  void setGroup(GroupMsg group);
+
+  void removeGroup(String id);
+
   /// Returns false when [site] is not a valid web address.
   bool addBlockedSite(String site);
 
@@ -243,4 +332,10 @@ abstract class EngineHostApi {
   void setOnboardingDone(bool done);
 
   void setDailyGoal(int minutes);
+
+  /// The supported short-video feeds (Instagram, YouTube, Facebook, Snapchat), in a fixed order.
+  List<ShortFormAppMsg> getShortFormApps();
+
+  /// Turns blocking of [packageName]'s short-video feed on or off. Only supported apps.
+  void setShortFormBlocked(String packageName, bool blocked);
 }

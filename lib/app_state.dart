@@ -19,6 +19,9 @@ class AppState extends ChangeNotifier {
   List<DayUsage> week = const [];
   Map<String, InstalledApp> apps = const {};
 
+  /// Short-video feeds Unscroll can block, with their state (from the engine).
+  List<ShortFormAppMsg> shortForm = const [];
+
   /// False until the first usage read finishes (it can take a few seconds).
   bool usageLoaded = false;
 
@@ -83,6 +86,7 @@ class AppState extends ChangeNotifier {
     try {
       _setSnapshot(await api.getSnapshot());
       permissions = await api.getPermissionStatus();
+      shortForm = await api.getShortFormApps();
     } catch (e) {
       // Any failure, not only platform errors, must reach the retry screen.
       loadError = e;
@@ -141,6 +145,13 @@ class AppState extends ChangeNotifier {
     return last.isEmpty ? pkg : last[0].toUpperCase() + last.substring(1);
   }
 
+  /// Apps the user chose to limit: with a rule or in a group. Quick block covers these (the
+  /// engine decides; this only shows the count) and focus starts with them.
+  Set<String> get limitedApps => {
+    for (final r in snapshot?.rules ?? const <AppRuleMsg>[]) r.packageName,
+    for (final g in snapshot?.groups ?? const <GroupMsg>[]) ...g.packages,
+  };
+
   AppRuleMsg? ruleFor(String pkg) {
     for (final r in snapshot?.rules ?? const <AppRuleMsg>[]) {
       if (r.packageName == pkg) return r;
@@ -162,6 +173,7 @@ class AppState extends ChangeNotifier {
         error = _genericError;
       }
       await refreshSnapshot();
+      await refreshShortForm();
       // Limits and extensions change today's numbers.
       unawaited(refreshUsage(todayOnly: true));
       return error;
@@ -171,6 +183,16 @@ class AppState extends ChangeNotifier {
   }
 
   static const _genericError = 'Something went wrong. Please try again.';
+
+  /// Re-reads the short-video feeds (detection health can change while the app is closed).
+  Future<void> refreshShortForm() async {
+    try {
+      shortForm = await api.getShortFormApps();
+      notifyListeners();
+    } on PlatformException {
+      // keep the previous list
+    }
+  }
 
   Future<void> refreshPermissions() async {
     try {

@@ -64,12 +64,12 @@ final permissionList = <PermissionInfo>[
       DisclosureItem(
         Icons.info_outline,
         'What Unscroll checks',
-        'The name of the open app or screen, and the address in your browser\'s address bar.',
+        'The name of the open app or screen, the address in your browser\'s address bar, and, in short-video apps you choose, which screen is open (by its name, not its content).',
       ),
       DisclosureItem(
         Icons.shield_outlined,
         'How it\'s used',
-        'It\'s compared with your own rules, on this phone, to show a pause or block screen.',
+        'It\'s compared with your own rules, on this phone, to show a pause or block screen or to close a short-video feed.',
       ),
       DisclosureItem(
         Icons.wifi_off_rounded,

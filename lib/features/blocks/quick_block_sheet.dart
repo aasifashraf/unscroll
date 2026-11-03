@@ -6,7 +6,7 @@ import '../../design_system/theme.dart';
 import '../../design_system/tokens.dart';
 import '../../engine/engine_api.g.dart';
 
-/// "Block my distracting apps for N minutes". Distracting = every app with a rule.
+/// "Block my distracting apps for N minutes". Distracting = every app with a rule or in a group.
 Future<void> showQuickBlockSheet(BuildContext context, AppState state) =>
     showModalBottomSheet<void>(
       context: context,
@@ -44,7 +44,7 @@ class _QuickBlockSheetState extends State<_QuickBlockSheet> {
   Widget build(BuildContext context) {
     final state = widget.state;
     final until = state.snapshot?.quickBlockUntil;
-    final ruleCount = state.snapshot?.rules.length ?? 0;
+    final ruleCount = state.limitedApps.length;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(Space.xl, 0, Space.xl, Space.xl),
@@ -56,8 +56,8 @@ class _QuickBlockSheetState extends State<_QuickBlockSheet> {
             const SizedBox(height: Space.xs),
             Text(
               ruleCount == 0
-                  ? 'Add an app in Blocks first: quick block covers every app you\'ve set a rule for.'
-                  : 'Blocks your $ruleCount ${ruleCount == 1 ? 'app' : 'apps'} with rules right now.',
+                  ? 'Add an app in Blocks first: quick block covers every app you\'ve set a rule or group for.'
+                  : 'Blocks your $ruleCount ${ruleCount == 1 ? 'app' : 'apps'} with rules or groups right now.',
               style: context.text.bodySmall,
             ),
             const SizedBox(height: Space.lg),

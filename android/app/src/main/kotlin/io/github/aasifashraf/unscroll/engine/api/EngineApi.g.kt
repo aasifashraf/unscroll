@@ -328,6 +328,61 @@ data class LimitStatus (
   }
 }
 
+/**
+ * Today's state of one app group's shared limit, computed by the engine.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class GroupLimitStatus (
+  val groupId: String,
+  val name: String,
+  /** Today's usage of all the group's apps added up. */
+  val usedMillis: Long,
+  /** Limit plus any "5 more minutes" taken for the group today. */
+  val allowedMillis: Long
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): GroupLimitStatus {
+      val groupId = pigeonVar_list[0] as String
+      val name = pigeonVar_list[1] as String
+      val usedMillis = pigeonVar_list[2] as Long
+      val allowedMillis = pigeonVar_list[3] as Long
+      return GroupLimitStatus(groupId, name, usedMillis, allowedMillis)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      groupId,
+      name,
+      usedMillis,
+      allowedMillis,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as GroupLimitStatus
+    return EngineApiPigeonUtils.deepEquals(this.groupId, other.groupId) && EngineApiPigeonUtils.deepEquals(this.name, other.name) && EngineApiPigeonUtils.deepEquals(this.usedMillis, other.usedMillis) && EngineApiPigeonUtils.deepEquals(this.allowedMillis, other.allowedMillis)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.groupId)
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.name)
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.usedMillis)
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.allowedMillis)
+    return result
+  }
+  override fun toString(): String {
+    return "GroupLimitStatus(groupId=$groupId, name=$name, usedMillis=$usedMillis, allowedMillis=$allowedMillis)"
+  }
+}
+
 /** Generated class from Pigeon that represents data sent in messages. */
 data class InstalledApp (
   val packageName: String,
@@ -427,7 +482,9 @@ data class DayUsage (
   /** Sorted by time, most used first. */
   val apps: List<AppUsageInfo>,
   /** Only filled for today: limits that apply today. */
-  val limits: List<LimitStatus>
+  val limits: List<LimitStatus>,
+  /** Only filled for today: group limits that apply today. */
+  val groupLimits: List<GroupLimitStatus>
 )
  {
   companion object {
@@ -437,7 +494,8 @@ data class DayUsage (
       val unlocks = pigeonVar_list[2] as Long
       val apps = pigeonVar_list[3] as List<AppUsageInfo>
       val limits = pigeonVar_list[4] as List<LimitStatus>
-      return DayUsage(dayStartMillis, totalMillis, unlocks, apps, limits)
+      val groupLimits = pigeonVar_list[5] as List<GroupLimitStatus>
+      return DayUsage(dayStartMillis, totalMillis, unlocks, apps, limits, groupLimits)
     }
   }
   fun toList(): List<Any?> {
@@ -447,6 +505,7 @@ data class DayUsage (
       unlocks,
       apps,
       limits,
+      groupLimits,
     )
   }
   override fun equals(other: Any?): Boolean {
@@ -457,7 +516,7 @@ data class DayUsage (
       return true
     }
     val other = other as DayUsage
-    return EngineApiPigeonUtils.deepEquals(this.dayStartMillis, other.dayStartMillis) && EngineApiPigeonUtils.deepEquals(this.totalMillis, other.totalMillis) && EngineApiPigeonUtils.deepEquals(this.unlocks, other.unlocks) && EngineApiPigeonUtils.deepEquals(this.apps, other.apps) && EngineApiPigeonUtils.deepEquals(this.limits, other.limits)
+    return EngineApiPigeonUtils.deepEquals(this.dayStartMillis, other.dayStartMillis) && EngineApiPigeonUtils.deepEquals(this.totalMillis, other.totalMillis) && EngineApiPigeonUtils.deepEquals(this.unlocks, other.unlocks) && EngineApiPigeonUtils.deepEquals(this.apps, other.apps) && EngineApiPigeonUtils.deepEquals(this.limits, other.limits) && EngineApiPigeonUtils.deepEquals(this.groupLimits, other.groupLimits)
   }
 
   override fun hashCode(): Int {
@@ -467,10 +526,11 @@ data class DayUsage (
     result = 31 * result + EngineApiPigeonUtils.deepHash(this.unlocks)
     result = 31 * result + EngineApiPigeonUtils.deepHash(this.apps)
     result = 31 * result + EngineApiPigeonUtils.deepHash(this.limits)
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.groupLimits)
     return result
   }
   override fun toString(): String {
-    return "DayUsage(dayStartMillis=$dayStartMillis, totalMillis=$totalMillis, unlocks=$unlocks, apps=$apps, limits=$limits)"
+    return "DayUsage(dayStartMillis=$dayStartMillis, totalMillis=$totalMillis, unlocks=$unlocks, apps=$apps, limits=$limits, groupLimits=$groupLimits)"
   }
 }
 
@@ -482,7 +542,11 @@ data class AppRuleMsg (
   /** ISO weekdays 1 (Mon) … 7 (Sun) the limit applies on. */
   val limitDays: List<Long>,
   val pauseSeconds: Long? = null,
-  val openLimit: Long? = null
+  val openLimit: Long? = null,
+  /** Ask "What are you here for?" on the pause screen (the answer is never stored). */
+  val askIntention: Boolean,
+  /** Close the app after this many minutes in one open (5–120), then a 10-minute cool-down. */
+  val sessionLimitMinutes: Long? = null
 )
  {
   companion object {
@@ -493,7 +557,9 @@ data class AppRuleMsg (
       val limitDays = pigeonVar_list[3] as List<Long>
       val pauseSeconds = pigeonVar_list[4] as Long?
       val openLimit = pigeonVar_list[5] as Long?
-      return AppRuleMsg(packageName, blocked, dailyLimitMinutes, limitDays, pauseSeconds, openLimit)
+      val askIntention = pigeonVar_list[6] as Boolean
+      val sessionLimitMinutes = pigeonVar_list[7] as Long?
+      return AppRuleMsg(packageName, blocked, dailyLimitMinutes, limitDays, pauseSeconds, openLimit, askIntention, sessionLimitMinutes)
     }
   }
   fun toList(): List<Any?> {
@@ -504,6 +570,8 @@ data class AppRuleMsg (
       limitDays,
       pauseSeconds,
       openLimit,
+      askIntention,
+      sessionLimitMinutes,
     )
   }
   override fun equals(other: Any?): Boolean {
@@ -514,7 +582,7 @@ data class AppRuleMsg (
       return true
     }
     val other = other as AppRuleMsg
-    return EngineApiPigeonUtils.deepEquals(this.packageName, other.packageName) && EngineApiPigeonUtils.deepEquals(this.blocked, other.blocked) && EngineApiPigeonUtils.deepEquals(this.dailyLimitMinutes, other.dailyLimitMinutes) && EngineApiPigeonUtils.deepEquals(this.limitDays, other.limitDays) && EngineApiPigeonUtils.deepEquals(this.pauseSeconds, other.pauseSeconds) && EngineApiPigeonUtils.deepEquals(this.openLimit, other.openLimit)
+    return EngineApiPigeonUtils.deepEquals(this.packageName, other.packageName) && EngineApiPigeonUtils.deepEquals(this.blocked, other.blocked) && EngineApiPigeonUtils.deepEquals(this.dailyLimitMinutes, other.dailyLimitMinutes) && EngineApiPigeonUtils.deepEquals(this.limitDays, other.limitDays) && EngineApiPigeonUtils.deepEquals(this.pauseSeconds, other.pauseSeconds) && EngineApiPigeonUtils.deepEquals(this.openLimit, other.openLimit) && EngineApiPigeonUtils.deepEquals(this.askIntention, other.askIntention) && EngineApiPigeonUtils.deepEquals(this.sessionLimitMinutes, other.sessionLimitMinutes)
   }
 
   override fun hashCode(): Int {
@@ -525,10 +593,12 @@ data class AppRuleMsg (
     result = 31 * result + EngineApiPigeonUtils.deepHash(this.limitDays)
     result = 31 * result + EngineApiPigeonUtils.deepHash(this.pauseSeconds)
     result = 31 * result + EngineApiPigeonUtils.deepHash(this.openLimit)
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.askIntention)
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.sessionLimitMinutes)
     return result
   }
   override fun toString(): String {
-    return "AppRuleMsg(packageName=$packageName, blocked=$blocked, dailyLimitMinutes=$dailyLimitMinutes, limitDays=$limitDays, pauseSeconds=$pauseSeconds, openLimit=$openLimit)"
+    return "AppRuleMsg(packageName=$packageName, blocked=$blocked, dailyLimitMinutes=$dailyLimitMinutes, limitDays=$limitDays, pauseSeconds=$pauseSeconds, openLimit=$openLimit, askIntention=$askIntention, sessionLimitMinutes=$sessionLimitMinutes)"
   }
 }
 
@@ -590,6 +660,64 @@ data class ScheduleMsg (
   }
   override fun toString(): String {
     return "ScheduleMsg(id=$id, name=$name, enabled=$enabled, days=$days, startMinute=$startMinute, endMinute=$endMinute, packages=$packages)"
+  }
+}
+
+/**
+ * Several apps sharing one daily limit.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class GroupMsg (
+  val id: String,
+  val name: String,
+  val packages: List<String>,
+  val dailyLimitMinutes: Long,
+  /** ISO weekdays 1 (Mon) … 7 (Sun) the limit applies on. */
+  val limitDays: List<Long>
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): GroupMsg {
+      val id = pigeonVar_list[0] as String
+      val name = pigeonVar_list[1] as String
+      val packages = pigeonVar_list[2] as List<String>
+      val dailyLimitMinutes = pigeonVar_list[3] as Long
+      val limitDays = pigeonVar_list[4] as List<Long>
+      return GroupMsg(id, name, packages, dailyLimitMinutes, limitDays)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      id,
+      name,
+      packages,
+      dailyLimitMinutes,
+      limitDays,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as GroupMsg
+    return EngineApiPigeonUtils.deepEquals(this.id, other.id) && EngineApiPigeonUtils.deepEquals(this.name, other.name) && EngineApiPigeonUtils.deepEquals(this.packages, other.packages) && EngineApiPigeonUtils.deepEquals(this.dailyLimitMinutes, other.dailyLimitMinutes) && EngineApiPigeonUtils.deepEquals(this.limitDays, other.limitDays)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.id)
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.name)
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.packages)
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.dailyLimitMinutes)
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.limitDays)
+    return result
+  }
+  override fun toString(): String {
+    return "GroupMsg(id=$id, name=$name, packages=$packages, dailyLimitMinutes=$dailyLimitMinutes, limitDays=$limitDays)"
   }
 }
 
@@ -684,6 +812,71 @@ data class FocusRecordMsg (
 }
 
 /**
+ * One app whose short-video feed Unscroll can block.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class ShortFormAppMsg (
+  val packageName: String,
+  /** The feed's name, e.g. "Instagram Reels". */
+  val label: String,
+  val installed: Boolean,
+  /** The user turned blocking on for this feed. */
+  val blocked: Boolean,
+  /** When the feed was last closed, in engine time (see [EngineSnapshot.engineNowMillis]). */
+  val lastDetectedAt: Long? = null,
+  /** Detection looked wrong in the installed version of the app (it may have changed its screens). */
+  val maybeOutdated: Boolean
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): ShortFormAppMsg {
+      val packageName = pigeonVar_list[0] as String
+      val label = pigeonVar_list[1] as String
+      val installed = pigeonVar_list[2] as Boolean
+      val blocked = pigeonVar_list[3] as Boolean
+      val lastDetectedAt = pigeonVar_list[4] as Long?
+      val maybeOutdated = pigeonVar_list[5] as Boolean
+      return ShortFormAppMsg(packageName, label, installed, blocked, lastDetectedAt, maybeOutdated)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      packageName,
+      label,
+      installed,
+      blocked,
+      lastDetectedAt,
+      maybeOutdated,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as ShortFormAppMsg
+    return EngineApiPigeonUtils.deepEquals(this.packageName, other.packageName) && EngineApiPigeonUtils.deepEquals(this.label, other.label) && EngineApiPigeonUtils.deepEquals(this.installed, other.installed) && EngineApiPigeonUtils.deepEquals(this.blocked, other.blocked) && EngineApiPigeonUtils.deepEquals(this.lastDetectedAt, other.lastDetectedAt) && EngineApiPigeonUtils.deepEquals(this.maybeOutdated, other.maybeOutdated)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.packageName)
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.label)
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.installed)
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.blocked)
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.lastDetectedAt)
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.maybeOutdated)
+    return result
+  }
+  override fun toString(): String {
+    return "ShortFormAppMsg(packageName=$packageName, label=$label, installed=$installed, blocked=$blocked, lastDetectedAt=$lastDetectedAt, maybeOutdated=$maybeOutdated)"
+  }
+}
+
+/**
  * Everything the UI shows that the engine owns.
  *
  * Generated class from Pigeon that represents data sent in messages.
@@ -691,6 +884,7 @@ data class FocusRecordMsg (
 data class EngineSnapshot (
   val rules: List<AppRuleMsg>,
   val schedules: List<ScheduleMsg>,
+  val groups: List<GroupMsg>,
   val focus: FocusMsg? = null,
   val quickBlockUntil: Long? = null,
   val blockedSites: List<String>,
@@ -700,29 +894,37 @@ data class EngineSnapshot (
   val dayStartMillis: Long,
   val focusHistory: List<FocusRecordMsg>,
   /** The engine's tamper-resistant "now"; focus and quick-block times are in this frame. */
-  val engineNowMillis: Long
+  val engineNowMillis: Long,
+  /** Times the user chose not to open an app on the pause screen today. */
+  val declinedToday: Long,
+  /** The same, since Unscroll was installed. */
+  val declinedTotal: Long
 )
  {
   companion object {
     fun fromList(pigeonVar_list: List<Any?>): EngineSnapshot {
       val rules = pigeonVar_list[0] as List<AppRuleMsg>
       val schedules = pigeonVar_list[1] as List<ScheduleMsg>
-      val focus = pigeonVar_list[2] as FocusMsg?
-      val quickBlockUntil = pigeonVar_list[3] as Long?
-      val blockedSites = pigeonVar_list[4] as List<String>
-      val blockedKeywords = pigeonVar_list[5] as List<String>
-      val onboardingDone = pigeonVar_list[6] as Boolean
-      val dailyGoalMinutes = pigeonVar_list[7] as Long
-      val dayStartMillis = pigeonVar_list[8] as Long
-      val focusHistory = pigeonVar_list[9] as List<FocusRecordMsg>
-      val engineNowMillis = pigeonVar_list[10] as Long
-      return EngineSnapshot(rules, schedules, focus, quickBlockUntil, blockedSites, blockedKeywords, onboardingDone, dailyGoalMinutes, dayStartMillis, focusHistory, engineNowMillis)
+      val groups = pigeonVar_list[2] as List<GroupMsg>
+      val focus = pigeonVar_list[3] as FocusMsg?
+      val quickBlockUntil = pigeonVar_list[4] as Long?
+      val blockedSites = pigeonVar_list[5] as List<String>
+      val blockedKeywords = pigeonVar_list[6] as List<String>
+      val onboardingDone = pigeonVar_list[7] as Boolean
+      val dailyGoalMinutes = pigeonVar_list[8] as Long
+      val dayStartMillis = pigeonVar_list[9] as Long
+      val focusHistory = pigeonVar_list[10] as List<FocusRecordMsg>
+      val engineNowMillis = pigeonVar_list[11] as Long
+      val declinedToday = pigeonVar_list[12] as Long
+      val declinedTotal = pigeonVar_list[13] as Long
+      return EngineSnapshot(rules, schedules, groups, focus, quickBlockUntil, blockedSites, blockedKeywords, onboardingDone, dailyGoalMinutes, dayStartMillis, focusHistory, engineNowMillis, declinedToday, declinedTotal)
     }
   }
   fun toList(): List<Any?> {
     return listOf(
       rules,
       schedules,
+      groups,
       focus,
       quickBlockUntil,
       blockedSites,
@@ -732,6 +934,8 @@ data class EngineSnapshot (
       dayStartMillis,
       focusHistory,
       engineNowMillis,
+      declinedToday,
+      declinedTotal,
     )
   }
   override fun equals(other: Any?): Boolean {
@@ -742,13 +946,14 @@ data class EngineSnapshot (
       return true
     }
     val other = other as EngineSnapshot
-    return EngineApiPigeonUtils.deepEquals(this.rules, other.rules) && EngineApiPigeonUtils.deepEquals(this.schedules, other.schedules) && EngineApiPigeonUtils.deepEquals(this.focus, other.focus) && EngineApiPigeonUtils.deepEquals(this.quickBlockUntil, other.quickBlockUntil) && EngineApiPigeonUtils.deepEquals(this.blockedSites, other.blockedSites) && EngineApiPigeonUtils.deepEquals(this.blockedKeywords, other.blockedKeywords) && EngineApiPigeonUtils.deepEquals(this.onboardingDone, other.onboardingDone) && EngineApiPigeonUtils.deepEquals(this.dailyGoalMinutes, other.dailyGoalMinutes) && EngineApiPigeonUtils.deepEquals(this.dayStartMillis, other.dayStartMillis) && EngineApiPigeonUtils.deepEquals(this.focusHistory, other.focusHistory) && EngineApiPigeonUtils.deepEquals(this.engineNowMillis, other.engineNowMillis)
+    return EngineApiPigeonUtils.deepEquals(this.rules, other.rules) && EngineApiPigeonUtils.deepEquals(this.schedules, other.schedules) && EngineApiPigeonUtils.deepEquals(this.groups, other.groups) && EngineApiPigeonUtils.deepEquals(this.focus, other.focus) && EngineApiPigeonUtils.deepEquals(this.quickBlockUntil, other.quickBlockUntil) && EngineApiPigeonUtils.deepEquals(this.blockedSites, other.blockedSites) && EngineApiPigeonUtils.deepEquals(this.blockedKeywords, other.blockedKeywords) && EngineApiPigeonUtils.deepEquals(this.onboardingDone, other.onboardingDone) && EngineApiPigeonUtils.deepEquals(this.dailyGoalMinutes, other.dailyGoalMinutes) && EngineApiPigeonUtils.deepEquals(this.dayStartMillis, other.dayStartMillis) && EngineApiPigeonUtils.deepEquals(this.focusHistory, other.focusHistory) && EngineApiPigeonUtils.deepEquals(this.engineNowMillis, other.engineNowMillis) && EngineApiPigeonUtils.deepEquals(this.declinedToday, other.declinedToday) && EngineApiPigeonUtils.deepEquals(this.declinedTotal, other.declinedTotal)
   }
 
   override fun hashCode(): Int {
     var result = javaClass.hashCode()
     result = 31 * result + EngineApiPigeonUtils.deepHash(this.rules)
     result = 31 * result + EngineApiPigeonUtils.deepHash(this.schedules)
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.groups)
     result = 31 * result + EngineApiPigeonUtils.deepHash(this.focus)
     result = 31 * result + EngineApiPigeonUtils.deepHash(this.quickBlockUntil)
     result = 31 * result + EngineApiPigeonUtils.deepHash(this.blockedSites)
@@ -758,10 +963,12 @@ data class EngineSnapshot (
     result = 31 * result + EngineApiPigeonUtils.deepHash(this.dayStartMillis)
     result = 31 * result + EngineApiPigeonUtils.deepHash(this.focusHistory)
     result = 31 * result + EngineApiPigeonUtils.deepHash(this.engineNowMillis)
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.declinedToday)
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.declinedTotal)
     return result
   }
   override fun toString(): String {
-    return "EngineSnapshot(rules=$rules, schedules=$schedules, focus=$focus, quickBlockUntil=$quickBlockUntil, blockedSites=$blockedSites, blockedKeywords=$blockedKeywords, onboardingDone=$onboardingDone, dailyGoalMinutes=$dailyGoalMinutes, dayStartMillis=$dayStartMillis, focusHistory=$focusHistory, engineNowMillis=$engineNowMillis)"
+    return "EngineSnapshot(rules=$rules, schedules=$schedules, groups=$groups, focus=$focus, quickBlockUntil=$quickBlockUntil, blockedSites=$blockedSites, blockedKeywords=$blockedKeywords, onboardingDone=$onboardingDone, dailyGoalMinutes=$dailyGoalMinutes, dayStartMillis=$dayStartMillis, focusHistory=$focusHistory, engineNowMillis=$engineNowMillis, declinedToday=$declinedToday, declinedTotal=$declinedTotal)"
   }
 }
 private open class EngineApiPigeonCodec : StandardMessageCodec() {
@@ -784,40 +991,55 @@ private open class EngineApiPigeonCodec : StandardMessageCodec() {
       }
       132.toByte() -> {
         (readValue(buffer) as? List<Any?>)?.let {
-          InstalledApp.fromList(it)
+          GroupLimitStatus.fromList(it)
         }
       }
       133.toByte() -> {
         (readValue(buffer) as? List<Any?>)?.let {
-          AppUsageInfo.fromList(it)
+          InstalledApp.fromList(it)
         }
       }
       134.toByte() -> {
         (readValue(buffer) as? List<Any?>)?.let {
-          DayUsage.fromList(it)
+          AppUsageInfo.fromList(it)
         }
       }
       135.toByte() -> {
         (readValue(buffer) as? List<Any?>)?.let {
-          AppRuleMsg.fromList(it)
+          DayUsage.fromList(it)
         }
       }
       136.toByte() -> {
         (readValue(buffer) as? List<Any?>)?.let {
-          ScheduleMsg.fromList(it)
+          AppRuleMsg.fromList(it)
         }
       }
       137.toByte() -> {
         (readValue(buffer) as? List<Any?>)?.let {
-          FocusMsg.fromList(it)
+          ScheduleMsg.fromList(it)
         }
       }
       138.toByte() -> {
         (readValue(buffer) as? List<Any?>)?.let {
-          FocusRecordMsg.fromList(it)
+          GroupMsg.fromList(it)
         }
       }
       139.toByte() -> {
+        (readValue(buffer) as? List<Any?>)?.let {
+          FocusMsg.fromList(it)
+        }
+      }
+      140.toByte() -> {
+        (readValue(buffer) as? List<Any?>)?.let {
+          FocusRecordMsg.fromList(it)
+        }
+      }
+      141.toByte() -> {
+        (readValue(buffer) as? List<Any?>)?.let {
+          ShortFormAppMsg.fromList(it)
+        }
+      }
+      142.toByte() -> {
         (readValue(buffer) as? List<Any?>)?.let {
           EngineSnapshot.fromList(it)
         }
@@ -839,36 +1061,48 @@ private open class EngineApiPigeonCodec : StandardMessageCodec() {
         stream.write(131)
         writeValue(stream, value.toList())
       }
-      is InstalledApp -> {
+      is GroupLimitStatus -> {
         stream.write(132)
         writeValue(stream, value.toList())
       }
-      is AppUsageInfo -> {
+      is InstalledApp -> {
         stream.write(133)
         writeValue(stream, value.toList())
       }
-      is DayUsage -> {
+      is AppUsageInfo -> {
         stream.write(134)
         writeValue(stream, value.toList())
       }
-      is AppRuleMsg -> {
+      is DayUsage -> {
         stream.write(135)
         writeValue(stream, value.toList())
       }
-      is ScheduleMsg -> {
+      is AppRuleMsg -> {
         stream.write(136)
         writeValue(stream, value.toList())
       }
-      is FocusMsg -> {
+      is ScheduleMsg -> {
         stream.write(137)
         writeValue(stream, value.toList())
       }
-      is FocusRecordMsg -> {
+      is GroupMsg -> {
         stream.write(138)
         writeValue(stream, value.toList())
       }
-      is EngineSnapshot -> {
+      is FocusMsg -> {
         stream.write(139)
+        writeValue(stream, value.toList())
+      }
+      is FocusRecordMsg -> {
+        stream.write(140)
+        writeValue(stream, value.toList())
+      }
+      is ShortFormAppMsg -> {
+        stream.write(141)
+        writeValue(stream, value.toList())
+      }
+      is EngineSnapshot -> {
+        stream.write(142)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -895,6 +1129,9 @@ interface EngineHostApi {
   fun removeRule(packageName: String)
   fun setSchedule(schedule: ScheduleMsg)
   fun removeSchedule(id: String)
+  /** Creates or replaces the group with [group]'s id. */
+  fun setGroup(group: GroupMsg)
+  fun removeGroup(id: String)
   /** Returns false when [site] is not a valid web address. */
   fun addBlockedSite(site: String): Boolean
   fun removeBlockedSite(site: String)
@@ -905,6 +1142,10 @@ interface EngineHostApi {
   fun stopQuickBlock()
   fun setOnboardingDone(done: Boolean)
   fun setDailyGoal(minutes: Long)
+  /** The supported short-video feeds (Instagram, YouTube, Facebook, Snapchat), in a fixed order. */
+  fun getShortFormApps(): List<ShortFormAppMsg>
+  /** Turns blocking of [packageName]'s short-video feed on or off. Only supported apps. */
+  fun setShortFormBlocked(packageName: String, blocked: Boolean)
 
   companion object {
     /** The codec used by EngineHostApi. */
@@ -1069,6 +1310,42 @@ interface EngineHostApi {
         }
       }
       run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.unscroll.EngineHostApi.setGroup$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val groupArg = args[0] as GroupMsg
+            val wrapped: List<Any?> = try {
+              api.setGroup(groupArg)
+              listOf(null)
+            } catch (exception: Throwable) {
+              EngineApiPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.unscroll.EngineHostApi.removeGroup$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val idArg = args[0] as String
+            val wrapped: List<Any?> = try {
+              api.removeGroup(idArg)
+              listOf(null)
+            } catch (exception: Throwable) {
+              EngineApiPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
         val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.unscroll.EngineHostApi.addBlockedSite$separatedMessageChannelSuffix", codec)
         if (api != null) {
           channel.setMessageHandler { message, reply ->
@@ -1216,6 +1493,40 @@ interface EngineHostApi {
             val minutesArg = args[0] as Long
             val wrapped: List<Any?> = try {
               api.setDailyGoal(minutesArg)
+              listOf(null)
+            } catch (exception: Throwable) {
+              EngineApiPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.unscroll.EngineHostApi.getShortFormApps$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            val wrapped: List<Any?> = try {
+              listOf(api.getShortFormApps())
+            } catch (exception: Throwable) {
+              EngineApiPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.unscroll.EngineHostApi.setShortFormBlocked$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val packageNameArg = args[0] as String
+            val blockedArg = args[1] as Boolean
+            val wrapped: List<Any?> = try {
+              api.setShortFormBlocked(packageNameArg, blockedArg)
               listOf(null)
             } catch (exception: Throwable) {
               EngineApiPigeonUtils.wrapError(exception)

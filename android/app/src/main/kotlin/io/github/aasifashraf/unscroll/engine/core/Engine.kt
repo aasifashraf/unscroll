@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
@@ -15,13 +16,16 @@ import io.github.aasifashraf.unscroll.engine.clock.ClockReading
 import io.github.aasifashraf.unscroll.engine.clock.DayClock
 import io.github.aasifashraf.unscroll.engine.clock.DayState
 import io.github.aasifashraf.unscroll.engine.overlay.OverlayController
+import io.github.aasifashraf.unscroll.engine.rules.AppGroup
 import io.github.aasifashraf.unscroll.engine.rules.BlockReason
 import io.github.aasifashraf.unscroll.engine.rules.Decision
 import io.github.aasifashraf.unscroll.engine.rules.RuleEngine
 import io.github.aasifashraf.unscroll.engine.rules.RuleInput
+import io.github.aasifashraf.unscroll.engine.rules.SessionTimes
 import io.github.aasifashraf.unscroll.engine.rules.UrlRules
 import io.github.aasifashraf.unscroll.engine.service.GuardService
 import io.github.aasifashraf.unscroll.engine.service.Notifications
+import io.github.aasifashraf.unscroll.engine.shortform.ShortFormMap
 import io.github.aasifashraf.unscroll.engine.store.FocusRecord
 import io.github.aasifashraf.unscroll.engine.store.PersistedState
 import io.github.aasifashraf.unscroll.engine.store.RulesStore
@@ -68,8 +72,22 @@ object Engine {
     // Worker-thread state.
     private var foreground: String? = null
 
+    /** Session-limit sessions per app (elapsedRealtime), with a short grace after leaving. */
+    private var sessions: Map<String, EngineLogic.AppSession> = emptyMap()
+
+    /** Cool-down ends per app (elapsedRealtime); loaded from the saved trusted-time copy on first use. */
+    private var bootCooldowns: Map<String, Long>? = null
+
+    /** App whose pause screen is up and not yet answered (for the "chose not to open" count). */
+    // Volatile: also read by the short-form check on the main thread.
+    @Volatile
+    private var pausing: String? = null
+
     /** The foreground app has an app-level block screen; the website check must not replace it. */
+    @Volatile
     private var appBlocked: String? = null
+
+    @Volatile
     private var neverBlock: Set<String> = emptySet()
     private var trackable: Set<String> = emptySet()
     private var urgent: Set<String> = emptySet()
@@ -87,13 +105,20 @@ object Engine {
         store = RulesStore(app)
         usage = UsageReader(app)
         system = SystemApps(app)
-        overlay = OverlayController(app, accessibilityService = { accessibility }, onGoHome = ::goHome, onGoBack = ::goBack)
+        overlay = OverlayController(
+            app,
+            accessibilityService = { accessibility },
+            onGoHome = ::goHome,
+            onGoBack = ::goBack,
+            onDeclinePause = ::declinePause,
+        )
         worker = Handler(HandlerThread("unscroll-engine").apply { start() }.looper)
         initialized = true
         // First in the queue, so events that arrive during start-up see the app lists.
         worker.post {
             loadSystemApps()
             today()
+            store.update { EngineLogic.withShortFormRevision(it, ShortFormMap.REVISION) }
             scheduleTimedEnds(store.state)
         }
     }
@@ -107,8 +132,7 @@ object Engine {
             main.post { overlay.dismiss() }
             // Forget the current app, so the next event (from either source) decides afresh.
             worker.post {
-                foreground = null
-                appBlocked = null
+                leaveForeground(null)
             }
         } else {
             onUserPresent() // an app may already be on top (e.g. the service restarted)
@@ -146,8 +170,7 @@ object Engine {
     fun onScreenOff() {
         if (!initialized) return
         worker.post {
-            foreground = null
-            appBlocked = null
+            leaveForeground(null) // ends the session; an unanswered pause isn't counted as declined
             worker.removeCallbacksAndMessages(timerToken)
             scheduleTimedEnds(store.state)
             // Never leave a block screen over the lock screen, an incoming call or an emergency alert.
@@ -186,6 +209,9 @@ object Engine {
         // Same app: in-app windows (dialogs, new screens) don't re-decide. Limits and schedules
         // that start mid-session are covered by timers.
         if (!force && pkg == foreground) return
+        val previous = foreground
+        if (EngineLogic.countsAsDecline(pausing, previous, pkg, urgent)) recordDecline()
+        if (pkg != pausing) pausing = null
         foreground = pkg
         appBlocked = null
         worker.removeCallbacksAndMessages(timerToken)
@@ -194,61 +220,107 @@ object Engine {
         val wallNow = System.currentTimeMillis()
         val day = today()
         val now = day.trustedWallMillis
+        val elapsedNow = SystemClock.elapsedRealtime()
+        sessions = EngineLogic.sessionsAfterSwitch(sessions, pkg, elapsedNow)
         val state = store.state
         if (pkg in neverBlock) {
             main.post { overlay.dismiss() }
             scheduleTimedEnds(state)
             return
         }
-        val stats = usageToday(pkg, day, wallNow)
+        val stats = usageToday(pkg, state.engine.groups, day, wallNow)
         val decision = RuleEngine.decide(
             RuleInput(
                 packageName = pkg,
                 nowMillis = now,
                 localTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(now), day.zone),
                 state = state.engine,
-                usageToday = stats,
+                usageToday = stats.app,
                 passUntil = passes[pkg],
                 neverBlock = neverBlock,
                 zone = day.zone,
+                groupUsageMillis = stats.groups,
+                session = SessionTimes(elapsedNow, sessions[pkg]?.startedAt, cooldowns(state, now, elapsedNow)[pkg]),
+                inCall = inCall(),
             ),
         )
-        act(pkg, decision, stats.opens, now)
+        act(pkg, decision, stats, now, wallNow, elapsedNow)
         scheduleTimedEnds(state)
     }
 
-    /** Today's usage of [pkg], counted in the wall-clock frame of Android's usage history. */
-    private fun usageToday(pkg: String, day: DayState, wallNow: Long): AppUsage {
+    /** Today's usage of one app and the summed usage of each group (group id → millis). */
+    private class TodayUsage(val app: AppUsage, val groups: Map<String, Long>)
+
+    /**
+     * Today's usage of [pkg] and of [groups], counted in the wall-clock frame of Android's usage
+     * history. One read and one aggregate cover the app and every group.
+     */
+    private fun usageToday(pkg: String, groups: List<AppGroup>, day: DayState, wallNow: Long): TodayUsage {
         val wallStart = DayClock.wallDayStart(day, wallNow)
         val result = usage.read(wallStart - UsageReader.LOOKBACK_MILLIS, wallNow)
-        val stats = UsageAggregator.aggregate(result.events, wallStart, wallNow)[pkg] ?: AppUsage(0, 0)
+        val all = UsageAggregator.aggregate(result.events, wallStart, wallNow)
+        val stats = all[pkg] ?: AppUsage(0, 0)
         // The accessibility event can arrive before the system logs the open.
         val opens = stats.opens + if (UsageAggregator.foregroundAt(result.events, wallNow) == pkg) 0 else 1
-        return AppUsage(stats.millis, opens)
+        return TodayUsage(AppUsage(stats.millis, opens), RuleEngine.groupUsageMillis(groups, all, neverBlock))
     }
 
-    private fun act(pkg: String, decision: Decision, opens: Int, now: Long) {
+    /** Boot-clock cool-down ends per app, loaded once per process from the saved copy. */
+    private fun cooldowns(state: PersistedState, trustedNow: Long, elapsedNow: Long): Map<String, Long> =
+        bootCooldowns ?: EngineLogic.inBootCooldowns(state.engine.sessionCooldownUntil, trustedNow, elapsedNow)
+            .also { bootCooldowns = it }
+
+    /** Ringing or in a phone/VoIP call (no permission needed). */
+    private fun inCall(): Boolean = EngineLogic.isCallMode(app.getSystemService(AudioManager::class.java).mode)
+
+    /** A new cool-down for [pkg]: timed by the boot clock, with a trusted-time copy saved for after a reboot. */
+    private fun startCooldown(pkg: String, trustedUntil: Long, now: Long, elapsedNow: Long) {
+        val inBoot = cooldowns(store.state, now, elapsedNow)
+        if ((inBoot[pkg] ?: Long.MIN_VALUE) > elapsedNow) return // this block is the running cool-down
+        bootCooldowns = EngineLogic.withCooldown(inBoot, pkg, elapsedNow + (trustedUntil - now), elapsedNow)
+        store.update {
+            val saved = EngineLogic.withCooldown(it.engine.sessionCooldownUntil, pkg, trustedUntil, now)
+            it.copy(engine = it.engine.copy(sessionCooldownUntil = saved))
+        }
+    }
+
+    private fun act(pkg: String, decision: Decision, stats: TodayUsage, now: Long, wallNow: Long, elapsedNow: Long) {
         when (decision) {
             is Decision.Block -> {
                 appBlocked = pkg
-                val canExtend = decision.reason == BlockReason.DAILY_LIMIT &&
-                    (store.state.extensionsUsedToday[pkg] ?: 0) < MAX_EXTENSIONS_PER_DAY
+                pausing = null
+                if (decision.reason == BlockReason.SESSION_LIMIT && decision.until != null) {
+                    startCooldown(pkg, decision.until, now, elapsedNow)
+                }
+                // A used-up group gets its own "5 more minutes", counted per group.
+                val extension = EngineLogic.extensionFor(decision.reason, decision.groupId, pkg, store.state.engine, stats.app.millis, stats.groups)
+                val canExtend = extension != null && (store.state.extensionsUsedToday[extension.key] ?: 0) < MAX_EXTENSIONS_PER_DAY
+                // "Back at HH:MM" on the phone's clock, which may differ from trusted time.
+                val untilOnPhone = decision.until?.let { EngineLogic.toWallClock(it, now, wallNow) }
+                val groupName = decision.groupId?.let { id -> store.state.engine.groups.firstOrNull { it.id == id } }
+                    ?.name?.takeIf { it.isNotBlank() }
                 main.post {
-                    overlay.showBlock(pkg, label(pkg), decision.reason, decision.until, canExtend) {
-                        worker.post { extend(pkg) }
+                    overlay.showBlock(pkg, label(pkg), decision.reason, untilOnPhone, canExtend, groupName) {
+                        worker.post { extend(pkg, decision.reason, decision.groupId) }
                     }
                 }
                 decision.until?.let { recheckAt(it, now, pkg) }
             }
-            is Decision.Pause -> main.post {
-                overlay.showPause(pkg, label(pkg), decision.seconds, opens) {
-                    worker.post {
-                        passes[pkg] = today().trustedWallMillis + PASS_MILLIS
-                        process(pkg, force = true) // limits still apply after the pause
+            is Decision.Pause -> {
+                pausing = pkg.takeIf { overlay.canDraw() } // nothing to decline if the screen can't show
+                val askIntention = store.state.engine.rules[pkg]?.askIntention == true
+                main.post {
+                    overlay.showPause(pkg, label(pkg), decision.seconds, stats.app.opens, askIntention) {
+                        worker.post {
+                            if (pausing == pkg) pausing = null
+                            passes[pkg] = today().trustedWallMillis + PASS_MILLIS
+                            process(pkg, force = true) // limits still apply after the pause
+                        }
                     }
                 }
             }
             is Decision.Allow -> {
+                pausing = null
                 main.post { overlay.dismissFor(pkg) }
                 decision.remainingMillis?.let { remaining ->
                     WARN_BEFORE.filter { remaining > it }.forEach { before ->
@@ -300,23 +372,28 @@ object Engine {
         }
     }
 
-    private fun extend(pkg: String) {
-        val rule = store.state.engine.rules[pkg] ?: return
-        val limit = rule.dailyLimitMinutes ?: return
-        val wallNow = System.currentTimeMillis()
-        val used = usageToday(pkg, today(), wallNow).millis
-        var granted = false
+    /** "5 more minutes" for [pkg]'s own limit, or for the shared limit of group [groupId]. */
+    private fun extend(pkg: String, reason: BlockReason, groupId: String?) {
+        val engine = store.state.engine
+        val stats = usageToday(pkg, engine.groups, today(), System.currentTimeMillis())
+        // The tap already removed the block screen: re-decide even when nothing is granted
+        // (rule or group removed meanwhile, second tap of a double tap), so it comes back if needed.
+        val extension = EngineLogic.extensionFor(reason, groupId, pkg, engine, stats.app.millis, stats.groups)
+        if (extension == null) {
+            process(pkg, force = true)
+            return
+        }
+        val (key, limit, used) = extension
         store.update {
-            val count = it.extensionsUsedToday[pkg] ?: 0
-            if (count >= MAX_EXTENSIONS_PER_DAY) return@update it // second tap of a double tap
-            granted = true
-            val extra = EngineLogic.extraMinutesAfterExtension(limit, it.engine.extraMinutesToday[pkg] ?: 0, used)
+            val count = it.extensionsUsedToday[key] ?: 0
+            if (count >= MAX_EXTENSIONS_PER_DAY) return@update it
+            val extra = EngineLogic.extraMinutesAfterExtension(limit, it.engine.extraMinutesToday[key] ?: 0, used)
             it.copy(
-                engine = it.engine.copy(extraMinutesToday = it.engine.extraMinutesToday + (pkg to extra)),
-                extensionsUsedToday = it.extensionsUsedToday + (pkg to count + 1),
+                engine = it.engine.copy(extraMinutesToday = it.engine.extraMinutesToday + (key to extra)),
+                extensionsUsedToday = it.extensionsUsedToday + (key to count + 1),
             )
         }
-        if (granted) process(pkg, force = true)
+        process(pkg, force = true)
     }
 
     /**
@@ -333,16 +410,9 @@ object Engine {
         )
         var result: DayState? = null
         store.update { st ->
-            val previous = st.day
-            val next = DayClock.advance(previous, reading)
+            val next = DayClock.advance(st.day, reading)
             result = next
-            when {
-                previous == null || next.day != previous.day ->
-                    st.copy(day = next, engine = st.engine.copy(extraMinutesToday = emptyMap()), extensionsUsedToday = emptyMap())
-                next.trustedWallMillis - previous.trustedWallMillis > 60_000 || next.bootCount != previous.bootCount ->
-                    st.copy(day = next) // persist occasionally, not on every event
-                else -> st
-            }
+            EngineLogic.withDay(st, next)
         }
         return result!!
     }
@@ -382,11 +452,39 @@ object Engine {
     }
 
     private fun unscrollIsForeground() {
-        foreground = app.packageName
-        appBlocked = null
+        leaveForeground(app.packageName)
         worker.removeCallbacksAndMessages(timerToken)
         main.post { overlay.dismiss() }
         scheduleTimedEnds(store.state) // keep the focus-end timer
+    }
+
+    /**
+     * The tracked app is gone from the front (screen off, Unscroll opened, service stopped): its
+     * session pauses (it ends unless the app is back within a minute), and an unanswered pause is
+     * dropped without counting it. Worker thread.
+     */
+    private fun leaveForeground(front: String?) {
+        foreground = front
+        appBlocked = null
+        sessions = EngineLogic.sessionsAfterSwitch(sessions, null, SystemClock.elapsedRealtime())
+        pausing = null
+    }
+
+    /** "I don't need it" or Back on the pause screen for [pkg]. Main thread. */
+    private fun declinePause(pkg: String) {
+        worker.post {
+            // Once per pause, even on a double tap; the home screen that follows then counts nothing.
+            if (pausing == pkg) recordDecline()
+            pausing = null
+        }
+        goHome()
+    }
+
+    /** Counts one "chose not to open" for today and in total. Worker thread. */
+    private fun recordDecline() {
+        pausing = null
+        today() // a new day first resets today's count
+        store.update(EngineLogic::withDecline)
     }
 
     private var neverBlockLoadedAt = 0L
@@ -422,4 +520,32 @@ object Engine {
     private fun label(pkg: String) = system.label(pkg)
 
     val isAccessibilityConnected get() = accessibility != null
+
+    /** Apps whose short-video feed the user blocked (in-memory snapshot, any thread). */
+    fun shortFormBlocked(): Set<String> = if (initialized) store.state.engine.shortFormBlocked else emptySet()
+
+    /** The app version the short-form map last matched in for [pkg] (any thread). */
+    fun shortFormMatchedVersion(pkg: String): Long? = if (initialized) store.state.shortFormMatchedVersion[pkg] else null
+
+    /**
+     * Whether the short-form check may act in [pkg] now: never in Unscroll or never-block apps,
+     * and not while a block or pause screen is up or decided. Main thread.
+     */
+    fun mayCloseShortForm(pkg: String): Boolean = initialized && pkg != app.packageName && pkg !in neverBlock &&
+        appBlocked != pkg && pausing != pkg && !overlay.isShowing()
+
+    /** A short-video feed in [pkg] was closed (by the map, or by the fallback). */
+    fun onShortFormClosed(pkg: String, appVersion: Long?, byFallback: Boolean) {
+        if (!initialized) return
+        worker.post {
+            val now = today().trustedWallMillis
+            store.update { EngineLogic.withShortFormDetection(it, pkg, now, appVersion, byFallback) }
+        }
+    }
+
+    /** The short-form loop guard tripped in [pkg]: detection may be outdated for this version. */
+    fun onShortFormLoop(pkg: String, appVersion: Long?) {
+        if (!initialized) return
+        worker.post { store.update { EngineLogic.withShortFormSuspect(it, pkg, appVersion) } }
+    }
 }
