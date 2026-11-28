@@ -32,7 +32,7 @@ jobs:
           version="$(grep -E '^version:' pubspec.yaml | sed -E 's/version:[[:space:]]*([^+]+).*/\1/')"
           [[ "v$version" == "$TAG" ]] || { echo "::error::Tag $TAG != pubspec version v$version"; exit 1; }
 
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: "17"
@@ -95,7 +95,7 @@ jobs:
           cp build/app/outputs/bundle/release/app-release.aab "dist/unscroll-$TAG.aab"
           (cd dist && sha256sum ./*.apk ./*.aab > SHA256SUMS.txt)
 
-      - uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+      - uses: anchore/sbom-action@dfcb83b97731532d72be422cbc51ee64adb6fd56 # v0.24.4
         with:
           path: .
           format: cyclonedx-json
@@ -113,7 +113,7 @@ jobs:
         if: always()
         run: rm -f android/key.properties "$RUNNER_TEMP/release.jks"
 
-      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+      - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           files: dist/*
           generate_release_notes: true
